@@ -30,7 +30,7 @@ Status labels:
 
 | Item | Definition | Status |
 |---|---|---|
-| Observed time at a stop | The arrival/departure delay from the last TripUpdates snapshot in which that stop_id still appears in the trip's `stop_time_update` list. Working default from tracing two `krono` trips (6 and 49 scheduled stops, ~750 snapshots at ~14 s polling) on 2026-09-07, where a passed stop's entry was dropped rather than frozen or marked `SKIPPED`. Not yet validated for final stops, trips that leave the feed mid-route, snapshot gaps, or which of `time`/`delay` the feed populates. See D-006 | PROVISIONAL |
+| Observed time at a stop | The recorded time at the measurement point from the last TripUpdates snapshot in which that stop (identified by `stop_sequence`) still appears in the trip's `stop_time_update` list, counted as observed only when that value carries `uncertainty = 0`. Values without the marker are last predictions, and the stop event is labelled `unobserved`. Basis (D-007): the `krono` feed keeps each passed stop for about 600 s after its departure time, so removal from the feed is not the passage event. About one snapshot after the event (median 15 s), the feed replaces the prediction with the recorded time and marks it `uncertainty = 0`; the marker never appears on future times. Snapshots arrive about every 16 s | FIXED |
 
 ## Punctuality
 
@@ -48,7 +48,9 @@ Status labels:
 | Item | Definition | Status |
 |---|---|---|
 | Cancelled trips | Trips with `schedule_relationship = CANCELED` are excluded from punctuality and reported separately as a cancellation rate | FIXED |
-| Unobserved stop events | Scheduled stop events with no realtime observation are labelled `unobserved`. They are **never** counted as on time and never silently dropped | FIXED |
+| Unobserved stop events | Scheduled stop events with no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007), are labelled `unobserved`. They are **never** counted as on time and never silently dropped | FIXED |
 | Coverage | Observed stop events ÷ scheduled stop events, per route and day. Reported alongside every punctuality figure | FIXED |
 | Minimum coverage | Below which a route-day is flagged as unreliable in reporting | OPEN |
 | Added trips | Trips in realtime with no matching scheduled trip: counted and logged, excluded from punctuality | PROVISIONAL |
+| Recorded-time marker share | Stop events at the measurement point whose held value carries `uncertainty = 0`, divided by stop events at the measurement point with a held value, per service day. Reported in data_quality. A drop signals a change in the operator's system | FIXED |
+| Marker share alert level | Below which a service day is flagged in data_quality | OPEN |

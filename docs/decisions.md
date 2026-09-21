@@ -81,7 +81,7 @@ it disappears from `stop_time_update`, rather than looking for a settled/actual 
 Accuracy is bounded by the polling interval (~14 s in the sample inspected), which is
 small relative to the punctuality thresholds already in `docs/definitions.md`.
 
-**Status:** PROVISIONAL since D-006.
+**Status:** PROVISIONAL since D-006; superseded by D-007.
 
 ---
 
@@ -106,3 +106,55 @@ scan results for both days have been reviewed. The scan is
 `scripts/validate_observed_time.py`, and its reports go in `docs/validation/`. If the
 feed never emits trip-level `CANCELED`, the Cancelled trips definition must be revisited
 before any cancellation rate is published.
+
+---
+
+## D-007 · 2026-09-21 · Observed time requires the feed's recorded-time marker
+
+**Decision:** The observed time at a stop is the recorded time from the last
+TripUpdates snapshot in which that stop (by `stop_sequence`) still appears, counted as
+observed only when that value carries `uncertainty = 0`. Held values without the
+marker are labelled `unobserved`. Status FIXED. This supersedes D-005 and lifts
+D-006's hold on transform work.
+
+**Reason:** From full-day scans of 2026-09-07 (Monday) and 2026-09-06 (Sunday), in
+`docs/validation/`:
+
+- Removal from the feed is not the passage event. Each passed stop is kept for about
+  600 s after its departure time. In every resolved clean drop (30,025 on Monday,
+  10,625 on Sunday) the predicted departure fell before the drop. D-005's two-trip
+  trace measured the spacing between drops, not this offset.
+- The feed marks recorded times. Of arrival times more than 60 s in the past, 99.5%
+  (Monday) and 99.8% (Sunday) carry `uncertainty = 0`. No future time carries it on
+  either day, and no non-zero value appears. The marker first appears a median 15 s
+  after the event, and the final value is dated a median 14-15 s before the snapshot
+  in which it last changed. The system writes the actual time about one snapshot after
+  it happens.
+- VehiclePositions (Monday, pings every 2 s) agrees. With the marker present, the held
+  value is within ±15 s of the GPS-based departure for 91.8% of 44,608 events and
+  within ±60 s for 98.8%. Early/on-time/late classification agrees for 97.5%. The
+  small negative offset grows with the detection radius (median −4 s at 25 m, −6.5 s
+  at 50 m, −12 s at 100 m). That is consistent with the GPS method measuring when the
+  bus leaves a circle around the stop, not with an error in the feed.
+- Held values without the marker are less reliable: within ±60 s of GPS for 95.0% of
+  1,332 events, with a p99 of about 375 s. They are 3.6% of held values on Monday and
+  2.9% on Sunday. 85% and 96% of them are final stops of trips removed from the feed
+  before the marker was written (see D-008).
+- `time − delay` equals the scheduled time from the same-date static schedule on every
+  row on both days, so reading `time` or `delay` gives the same delay.
+
+**Consequences:**
+
+- Transform work can proceed on this rule.
+- First stops: the held value runs a median 16 s earlier than GPS, against 6 s at
+  intermediate stops. Neither source shows any early departure at first stops (0 of
+  1,981 on Monday). But the held value may understate first-stop lateness: its on-time
+  share exceeds GPS by 2.6 pp at +180 s and 9.6 pp at +60 s. First-stop figures,
+  especially at the +60 s sensitivity threshold, are reported with that caveat.
+- Across all stops, the held value leans slightly earlier than GPS. With the marker
+  present, on-time share differs by 0.5 pp at +180 s, 1.8 pp at +60 s and 0.2 pp at
+  +300 s.
+- data_quality reports the daily recorded-time marker share. A drop signals a change in
+  the operator's system. The alert level is OPEN.
+- The VehiclePositions check covers one weekday. VehiclePositions is a validation
+  source, not part of the pipeline.
