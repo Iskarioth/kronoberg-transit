@@ -5,13 +5,18 @@ from pathlib import Path
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from koda_scan_lib import (
     STAGING_SCHEMA,
+    assert_unique_rows,
     classify_leaving,
     collect_drop_events,
+    fetch_stu_details,
+    find_reappearance_events,
+    find_repeat_drops,
     predicted_arrival,
     predicted_departure,
     setup_duckdb,
@@ -61,6 +66,106 @@ def test_drop_not_from_the_front():
     assert len(events) == 1
     assert events[0]["kind"] == "not_from_front"
     assert events[0]["stop_id"] == "B"
+
+
+def test_looping_trip_drop_is_keyed_on_stop_sequence_not_stop_id():
+    # Stop "A" is visited twice, at stop_sequence 1 and 3. Between the two
+    # snapshots, only the first occurrence (seq 1) drops; the second (seq 3)
+    # is still listed. A stop_id-only comparison would see "A" present in
+    # both snapshots and miss the first visit's drop entirely.
+    timelines = {
+        "T1": [
+            (100, ["A", "B", "A", "C"], [1, 2, 3, 4]),
+            (120, ["B", "A", "C"], [2, 3, 4]),
+        ]
+    }
+    trip_meta = {"T1": ("trip1", "20260101")}
+
+    events = collect_drop_events(timelines, trip_meta)
+
+    assert len(events) == 1
+    assert events[0]["kind"] == "clean"
+    assert events[0]["stop_id"] == "A"
+    assert events[0]["stop_seq"] == 1
+
+
+def test_assert_unique_rows_fires_on_duplicate_trip_stop_sequence():
+    rows = [
+        {"trip_id": "T1", "start_date": "20260101", "stop_seq": 1},
+        {"trip_id": "T1", "start_date": "20260101", "stop_seq": 1},
+    ]
+
+    with pytest.raises(AssertionError):
+        assert_unique_rows(rows, ["trip_id", "start_date", "stop_seq"], "test rows")
+
+
+def test_stop_that_drops_reappears_then_drops_again_is_a_repeat_drop():
+    # ts=100: stop 1 present. ts=120: dropped. ts=140: reappears in one
+    # snapshot. ts=160: dropped again. Must run without raising, and the
+    # reappearance-in-between must be recognized as a repeat drop.
+    timelines = {
+        "T1": [
+            (100, ["A"], [1]),
+            (120, [], []),
+            (140, ["A"], [1]),
+            (160, [], []),
+        ]
+    }
+    trip_meta = {"T1": ("trip1", "20260101")}
+
+    events = collect_drop_events(timelines, trip_meta)
+
+    assert len(events) == 2
+    assert all(e["stop_seq"] == 1 for e in events)
+    assert [e["last_ts"] for e in events] == [100, 140]
+
+    repeat_drops = find_repeat_drops(events)
+    key = ("trip1", "20260101", 1)
+    assert key in repeat_drops
+    assert len(repeat_drops[key]) == 2
+
+    reappearances = find_reappearance_events(timelines, trip_meta, repeat_drops)
+    assert len(reappearances) == 1
+    assert reappearances[0]["reappear_ts"] == 140
+    assert reappearances[0]["stop_seq"] == 1
+
+
+def test_assert_unique_rows_passes_on_unique_keys():
+    rows = [
+        {"trip_id": "T1", "start_date": "20260101", "stop_seq": 1},
+        {"trip_id": "T1", "start_date": "20260101", "stop_seq": 3},
+    ]
+
+    assert_unique_rows(rows, ["trip_id", "start_date", "stop_seq"], "test rows")  # must not raise
+
+
+# --------------------------------------------------------------------------
+# fetch_stu_details: keyed on stop_sequence, so a looping trip's two visits
+# to the same stop_id resolve to their own, correct row
+# --------------------------------------------------------------------------
+
+
+def test_fetch_stu_details_resolves_the_correct_visit_for_a_looping_stop_id():
+    con = duckdb.connect()
+    con.execute(
+        "CREATE TABLE rows_dedup (trip_id VARCHAR, start_date VARCHAR, header_timestamp BIGINT, "
+        "stop_id VARCHAR, stop_sequence INTEGER, "
+        "arrival_time_present BOOLEAN, arrival_time BIGINT, "
+        "arrival_delay_present BOOLEAN, arrival_delay INTEGER, "
+        "departure_time_present BOOLEAN, departure_time BIGINT, "
+        "departure_delay_present BOOLEAN, departure_delay INTEGER)"
+    )
+    # Same trip, same snapshot, same stop_id "A" at two stop_sequences, with
+    # different departure times.
+    con.execute(
+        "INSERT INTO rows_dedup VALUES "
+        "('trip1', '20260101', 100, 'A', 1, false, NULL, false, NULL, true, 5000, false, NULL), "
+        "('trip1', '20260101', 100, 'A', 3, false, NULL, false, NULL, true, 9000, false, NULL)"
+    )
+
+    result = fetch_stu_details(con, [("trip1", "20260101", 100, 1)])
+
+    assert result[("trip1", "20260101", 100, 1)]["departure_time"] == 5000
 
 
 # --------------------------------------------------------------------------

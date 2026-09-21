@@ -635,6 +635,116 @@ def check6_missing_marker(con: duckdb.DuckDBPyConnection) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Stops that reappeared after dropping: same feed anomaly as
+# observed_time's "stops that dropped more than once" (see
+# scripts/koda_scan_lib.py collect_drop_events), characterised here in terms
+# of the held-value pipeline: does the value D-007 actually uses (the final
+# appearance) differ from what was held just before the first drop?
+# Requires held_trip_snapshot_stops, built by check5d_leave_and_return.
+# --------------------------------------------------------------------------
+
+
+def check7_reappeared_stops(con: duckdb.DuckDBPyConnection) -> dict:
+    rows = con.execute(
+        "SELECT trip_id, start_date, header_timestamp, stop_seqs "
+        "FROM held_trip_snapshot_stops ORDER BY trip_id, start_date, header_timestamp"
+    ).fetchall()
+    timelines: dict[tuple, list[tuple[int, set]]] = {}
+    for trip_id, start_date, ts, stop_seqs in rows:
+        timelines.setdefault((trip_id, start_date), []).append((ts, set(stop_seqs or [])))
+
+    reappeared: list[tuple] = []
+    for (trip_id, start_date), snaps in timelines.items():
+        ever_seen: dict[int, int] = {}
+        reappeared_already: set[int] = set()
+        prev_seqs: set | None = None
+        for ts, seqs in snaps:
+            if prev_seqs is not None:
+                newly_present = seqs - prev_seqs
+                for seq in newly_present:
+                    if seq in ever_seen and seq not in reappeared_already:
+                        reappeared.append((trip_id, start_date, seq, ever_seen[seq]))
+                        reappeared_already.add(seq)
+            for seq in seqs:
+                ever_seen[seq] = ts
+            prev_seqs = seqs
+
+    if not reappeared:
+        return {"n": 0}
+
+    tbl = pa.table(
+        {
+            "trip_id": [r[0] for r in reappeared],
+            "start_date": pa.array([r[1] for r in reappeared], type=pa.string()),
+            "stop_sequence": [r[2] for r in reappeared],
+            "last_ts_before_drop": [r[3] for r in reappeared],
+        }
+    )
+    con.register("reappeared_src", tbl)
+    con.execute("CREATE OR REPLACE TABLE reappeared_stops AS SELECT * FROM reappeared_src")
+    con.unregister("reappeared_src")
+
+    matched = con.execute(
+        "SELECT r.trip_id, r.start_date, r.stop_sequence, "
+        "hb.held_time AS time_before, hb.held_uncertainty_present AS marker_before, "
+        "hc.held_value AS time_final, hc.held_uncertainty_present AS marker_final "
+        "FROM reappeared_stops r "
+        "JOIN held_series_annotated hb "
+        "ON hb.trip_id = r.trip_id AND COALESCE(hb.start_date,'') = COALESCE(r.start_date,'') "
+        "AND hb.stop_sequence = r.stop_sequence AND hb.header_timestamp = r.last_ts_before_drop "
+        "JOIN held_value_check1 hc "
+        "ON hc.trip_id = r.trip_id AND COALESCE(hc.start_date,'') = COALESCE(r.start_date,'') "
+        "AND hc.stop_sequence = r.stop_sequence"
+    ).fetchall()
+
+    n = len(matched)
+    n_differs = sum(1 for r in matched if r[3] != r[5])
+    diffs = [r[5] - r[3] for r in matched]
+    matrix: dict[tuple[bool, bool], int] = {}
+    for r in matched:
+        marker_key = (bool(r[4]), bool(r[6]))
+        matrix[marker_key] = matrix.get(marker_key, 0) + 1
+
+    return {
+        "n": n,
+        "n_reappeared_total": len(reappeared),
+        "n_differs": n_differs,
+        "diff_percentiles": {q: percentile(diffs, q) for q in (5, 25, 50, 75, 95)},
+        "n_diffs": len(diffs),
+        "marker_matrix": matrix,
+    }
+
+
+def check7_vp_offsets(con: duckdb.DuckDBPyConnection) -> list[dict]:
+    """Per reappeared stop (from the reappeared_stops table check7 built):
+    the V3 (R=50m) offset against VP for both the final-appearance held
+    value and the value from just before the first drop. Call after
+    build_vp_estimate(con) has run at R=50m."""
+    rows = con.execute(
+        "SELECT r.trip_id, r.stop_sequence, hb.held_time AS time_before, "
+        "hc.held_value AS time_final, ve.vp_time "
+        "FROM reappeared_stops r "
+        "JOIN held_series_annotated hb "
+        "ON hb.trip_id = r.trip_id AND COALESCE(hb.start_date,'') = COALESCE(r.start_date,'') "
+        "AND hb.stop_sequence = r.stop_sequence AND hb.header_timestamp = r.last_ts_before_drop "
+        "JOIN held_value_check1 hc "
+        "ON hc.trip_id = r.trip_id AND COALESCE(hc.start_date,'') = COALESCE(r.start_date,'') "
+        "AND hc.stop_sequence = r.stop_sequence "
+        "JOIN vp_estimate ve ON ve.trip_id = r.trip_id AND ve.stop_sequence = r.stop_sequence "
+        "ORDER BY r.trip_id, r.stop_sequence"
+    ).fetchall()
+    return [
+        {
+            "trip_id": tid,
+            "stop_sequence": seq,
+            "offset_before": time_before - vp_time,
+            "offset_final": time_final - vp_time,
+        }
+        for tid, seq, time_before, time_final, vp_time in rows
+    ]
+
+
+# --------------------------------------------------------------------------
 # VehiclePositions setup: dedup + scheduled-time window matching
 #
 # The feed's VehiclePosition entities are majority trip-less (idle/depot
@@ -1488,6 +1598,46 @@ def render_report(ctx: dict) -> str:
             lines.append(f"- {position}, {leave_label}: {fmt_share(n, c6['n_missing'])}")
     lines.append("")
 
+    # Stops that reappeared after dropping
+    c7 = ctx["check7"]
+    lines.append("## Stops that reappeared after dropping")
+    lines.append("")
+    if not c7.get("n"):
+        lines.append("None found.")
+    else:
+        lines.append(
+            f"- Count (resolvable against both the pre-drop snapshot and the final appearance): {c7['n']} "
+            f"(of {c7['n_reappeared_total']} reappeared stops found)"
+        )
+        lines.append(
+            f"- Share where the time differs (last snapshot before the first drop vs. final "
+            f"appearance): {fmt_share(c7['n_differs'], c7['n'])}"
+        )
+        lines.append(
+            f"- Difference (final minus before), seconds, n={c7['n_diffs']}: "
+            f"{fmt_pct_list(c7['diff_percentiles'])}"
+        )
+        lines.append("- Marker status, before the first drop -> final appearance (count):")
+        for (before, after), n in sorted(c7["marker_matrix"].items()):
+            b_label = "present" if before else "absent"
+            a_label = "present" if after else "absent"
+            lines.append(f"  - {b_label} -> {a_label}: {n}")
+        lines.append("")
+        if ctx["vp_ran"] and ctx.get("check7_vp"):
+            lines.append(
+                "**Per-stop V3 offset against VP (R = 50m)**, before the first drop vs. the "
+                "final appearance:"
+            )
+            lines.append("")
+            lines.append("| trip_id | stop_sequence | offset before (s) | offset final (s) |")
+            lines.append("|---|---|---|---|")
+            for row in ctx["check7_vp"]:
+                lines.append(
+                    f"| {row['trip_id']} | {row['stop_sequence']} | {row['offset_before']} | "
+                    f"{row['offset_final']} |"
+                )
+    lines.append("")
+
     # V sections
     if not ctx["vp_ran"]:
         lines.append("## V1-V4: VehiclePositions")
@@ -1780,6 +1930,7 @@ def main() -> int:
         c5c = check5c_large_gaps(con)
         c5d = check5d_leave_and_return(con)
         c6 = check6_missing_marker(con)
+        c7 = check7_reappeared_stops(con)
 
         ctx = {
             "date": svc_date,
@@ -1801,6 +1952,7 @@ def main() -> int:
             "check5c": c5c,
             "check5d": c5d,
             "check6": c6,
+            "check7": c7,
             "vp_ran": False,
         }
 
@@ -1841,6 +1993,14 @@ def main() -> int:
                     v3_full = v3_held_vs_vp(con)
                     v4 = v4_classification_agreement(con)
                     vp_reconciliation = build_vp_reconciliation(con, v4["n_total"])
+                    check7_vp = check7_vp_offsets(con) if c7.get("n") else []
+                    for row in check7_vp:
+                        if abs(row["offset_final"]) > 60:
+                            sys.exit(
+                                f"STOP: reappeared stop (trip={row['trip_id']}, "
+                                f"stop_sequence={row['stop_sequence']}) has a final-appearance "
+                                f"offset of {row['offset_final']}s against VP (>60s)."
+                            )
                 else:
                     offsets = [
                         r[0]
@@ -1864,6 +2024,7 @@ def main() -> int:
                     "v3_compact": v3_compact,
                     "v4": v4,
                     "vp_reconciliation": vp_reconciliation,
+                    "check7_vp": check7_vp,
                 }
             )
         else:

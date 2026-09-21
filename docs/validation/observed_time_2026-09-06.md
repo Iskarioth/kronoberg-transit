@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4541
 - First snapshot: 2026-09-05T21:59:43+00:00 UTC / 2026-09-05T23:59:43+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-06T21:35:21+00:00 UTC / 2026-09-06T23:35:21+02:00 Europe/Stockholm
-- Git commit: e3c5f50c19ff17e69f09d6c5a1175daa1c8a2ab5
-- Run timestamp (UTC): 2026-09-21T09:46:44Z
+- Git commit: 59e2c149ad0c8d1a932fc51779d989e40c21c28e
+- Run timestamp (UTC): 2026-09-21T14:13:52Z
 
 ## 1. Snapshot cadence
 
@@ -101,11 +101,25 @@ Among 700 matched, uncensored trips:
 
 ## 5. Stop drops
 
-Among 10929 stop-drop events (matched, uncensored trips):
-- Clean drops (front of list, trip stays in feed): 10625 / 10929 (97.2%)
-- Drops not from the front: 6 / 10929 (0.1%)
-- Intervals with 2+ stops dropped at once: 298 / 10929 (2.7%)
+Among 10971 stop-drop events (matched, uncensored trips):
+- Clean drops (front of list, trip stays in feed): 10661 / 10971 (97.2%)
+- Drops not from the front: 0 / 10971 (0.0%)
+- Intervals with 2+ stops dropped at once: 310 / 10971 (2.8%)
 - Window width (first-absent minus last-present, seconds): p50=16.0, p95=31.0, p99=32.0, max=50
+
+**Stops that dropped more than once:**
+
+- Trips affected: 1
+- Distinct stop events affected: 2
+- Repeat drops (occurrences beyond the first): 2
+- Reappearance events (one snapshot, one or more stops): 1
+- Stops reappearing per event (n=1): p25=2.0, p50=2.0, p75=2.0, p95=2.0
+
+**Reappearance characterisation:**
+
+- Reappearance snapshot identical to an earlier snapshot of the same trip (same stop_sequences, same times, same uncertainty): 0 / 1 (0.0%)
+- Trip-level TripUpdate.timestamp populated at the reappearance snapshot: 1 / 1 (100.0%)
+- Of those with the timestamp also populated at the trip's prior snapshot (n=1), it goes backwards: 0 / 1 (0.0%)
 
 ## 6. Retained stale values
 
@@ -116,23 +130,43 @@ Among 1978256 stop_time_updates with a populated arrival.time or departure.time,
 
 ## 7. Prediction vs drop time
 
-**Predicted departure (departure-first fallback)** (10625 / 10625 (100.0%) resolved)
+**Predicted departure (departure-first fallback)** (10661 / 10661 (100.0%) resolved)
 
-- Prediction source used: {'departure.time': 10625}
-- Offset percentiles (seconds, predicted minus window midpoint): p1=-801.3, p5=-714.0, p25=-607.5, p50=-602.0, p75=-597.0, p95=-592.5, p99=-590.0
-- Share with |offset| <= 15s: 0.0% (of 10625 resolved)
-- Share with |offset| <= 30s: 0.0% (of 10625 resolved)
-- Share with |offset| <= 60s: 0.0% (of 10625 resolved)
-- Prediction falls before/inside/after the drop window: 10625 / 0 / 0 (of 10625)
+- Prediction source used: {'departure.time': 10661}
+- Offset percentiles (seconds, predicted minus window midpoint): p1=-800.9, p5=-714.0, p25=-607.5, p50=-602.0, p75=-597.0, p95=-592.5, p99=-590.0
+- Share with |offset| <= 15s: 0.0% (of 10661 resolved)
+- Share with |offset| <= 30s: 0.0% (of 10661 resolved)
+- Share with |offset| <= 60s: 0.0% (of 10661 resolved)
+- Prediction falls before/inside/after the drop window: 10661 / 0 / 0 (of 10661)
 
-**Predicted arrival (arrival-first fallback)** (10625 / 10625 (100.0%) resolved)
+**Predicted arrival (arrival-first fallback)** (10661 / 10661 (100.0%) resolved)
 
-- Prediction source used: {'arrival.time': 10625}
-- Offset percentiles (seconds, predicted minus window midpoint): p1=-872.8, p5=-756.0, p25=-637.0, p50=-607.0, p75=-599.5, p95=-593.0, p99=-591.5
-- Share with |offset| <= 15s: 0.0% (of 10625 resolved)
-- Share with |offset| <= 30s: 0.0% (of 10625 resolved)
-- Share with |offset| <= 60s: 0.0% (of 10625 resolved)
-- Prediction falls before/inside/after the drop window: 10625 / 0 / 0 (of 10625)
+- Prediction source used: {'arrival.time': 10661}
+- Offset percentiles (seconds, predicted minus window midpoint): p1=-872.4, p5=-756.5, p25=-638.0, p50=-607.0, p75=-599.5, p95=-593.0, p99=-591.5
+- Share with |offset| <= 15s: 0.0% (of 10661 resolved)
+- Share with |offset| <= 30s: 0.0% (of 10661 resolved)
+- Share with |offset| <= 60s: 0.0% (of 10661 resolved)
+- Prediction falls before/inside/after the drop window: 10661 / 0 / 0 (of 10661)
+
+Excluding 4 clean drops of stops that dropped more than once, same statistics:
+
+**Predicted departure, excluding repeat-dropped stops** (10657 / 10657 (100.0%) resolved)
+
+- Prediction source used: {'departure.time': 10657}
+- Offset percentiles (seconds, predicted minus window midpoint): p1=-800.9, p5=-714.0, p25=-607.5, p50=-602.0, p75=-597.0, p95=-592.5, p99=-590.0
+- Share with |offset| <= 15s: 0.0% (of 10657 resolved)
+- Share with |offset| <= 30s: 0.0% (of 10657 resolved)
+- Share with |offset| <= 60s: 0.0% (of 10657 resolved)
+- Prediction falls before/inside/after the drop window: 10657 / 0 / 0 (of 10657)
+
+**Predicted arrival, excluding repeat-dropped stops** (10657 / 10657 (100.0%) resolved)
+
+- Prediction source used: {'arrival.time': 10657}
+- Offset percentiles (seconds, predicted minus window midpoint): p1=-872.4, p5=-756.5, p25=-638.0, p50=-607.0, p75=-599.5, p95=-593.0, p99=-591.5
+- Share with |offset| <= 15s: 0.0% (of 10657 resolved)
+- Share with |offset| <= 30s: 0.0% (of 10657 resolved)
+- Share with |offset| <= 60s: 0.0% (of 10657 resolved)
+- Prediction falls before/inside/after the drop window: 10657 / 0 / 0 (of 10657)
 
 **Final-stop arrival, trips that left with only the final stop (3 events)** (3 / 3 (100.0%) resolved)
 
@@ -158,7 +192,8 @@ Not applicable: only one route_type (700) observed among matched trips.
 
 - 913 snapshot files share a header_timestamp with another file in the same day (deduplicated to one canonical file per timestamp).
 - 3 / 700 (0.4%) of matched, uncensored trips left the feed with only their final static stop remaining; 697 / 700 (99.6%) left with 2+ stops still listed.
-- 6 drops were not from the front of the list and 298 intervals dropped 2+ stops at once, out of 10929 total.
+- 0 drops were not from the front of the list and 310 intervals dropped 2+ stops at once, out of 10971 total.
+- 2 stop events across 1 trip(s) dropped more than once (2 repeat drops total), in 1 reappearance event(s); 0 / 1 (0.0%) reproduce an earlier snapshot of the same trip exactly.
 - 507626 / 1978256 (25.7%) of stop_time_updates with a populated time field are more than 60s stale relative to the snapshot's own header_timestamp.
-- Across 10625 resolved clean drops, predicted departure.time falls before the drop window in 10625 of 10625 cases (offset percentiles: p1=-801.3, p5=-714.0, p25=-607.5, p50=-602.0, p75=-597.0, p95=-592.5, p99=-590.0), and this holds even for trips running close to on-time - the predicted departure/arrival time is not close to when the stop actually leaves the feed.
+- Across 10661 resolved clean drops, predicted departure.time falls before the drop window in 10661 of 10661 cases (offset percentiles: p1=-800.9, p5=-714.0, p25=-607.5, p50=-602.0, p75=-597.0, p95=-592.5, p99=-590.0), and this holds even for trips running close to on-time - the predicted departure/arrival time is not close to when the stop actually leaves the feed.
 - For the 3 trips that left with only their final stop remaining, the predicted-arrival-vs-drop offset is far more spread out and not consistently one-sided (offset percentiles: p1=-927.0, p5=-902.9, p25=-782.2, p50=-631.5, p75=-610.0, p95=-592.8, p99=-589.4; before/inside/after: 3/0/0), unlike the tight, consistently-before pattern for mid-route clean drops.

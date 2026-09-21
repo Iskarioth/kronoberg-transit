@@ -44,6 +44,8 @@ STAGING_SCHEMA = pa.schema(
         ("start_date", pa.string()),
         ("route_id", pa.string()),
         ("trip_schedule_relationship", pa.string()),
+        ("tu_timestamp_present", pa.bool_()),
+        ("tu_timestamp", pa.int64()),
         ("stop_sequence", pa.int32()),
         ("stop_id", pa.string()),
         ("stop_schedule_relationship", pa.string()),
@@ -140,6 +142,8 @@ def stage_hour(operator: str, feed: str, svc_date: str, hour: int, out_dir: Path
                         "start_date": td.start_date if td.HasField("start_date") else None,
                         "route_id": td.route_id if td.HasField("route_id") else None,
                         "trip_schedule_relationship": TRIP_SR.Name(td.schedule_relationship),
+                        "tu_timestamp_present": tu.HasField("timestamp"),
+                        "tu_timestamp": tu.timestamp if tu.HasField("timestamp") else None,
                     }
                     if not tu.stop_time_update:
                         rows.append({**base, **_empty_stu_fields()})
@@ -531,18 +535,43 @@ def fetch_trip_timelines(
     return timelines
 
 
+def assert_unique_rows(rows: list[dict], key_cols: list[str], label: str) -> None:
+    """Fails loudly if `rows` is not unique on key_cols. A stop_id alone can
+    repeat within one trip on a looping route, so stop_id-keyed dicts/joins
+    silently fan out or overwrite - every stop event here is keyed on
+    (trip, stop_sequence) instead."""
+    keys = [tuple(r[c] for c in key_cols) for r in rows]
+    if len(keys) != len(set(keys)):
+        raise AssertionError(
+            f"{label} violates uniqueness on {key_cols}: {len(keys)} rows, {len(set(keys))} distinct"
+        )
+
+
 def collect_drop_events(timelines: dict, trip_meta: dict) -> list[dict]:
     """A 'drop' is a stop disappearing from a trip's stop_time_update list
-    while the trip itself remains present in the next observed snapshot."""
+    while the trip itself remains present in the next observed snapshot.
+    Compared by stop_sequence, not stop_id: a looping trip can revisit the
+    same stop_id at a later stop_sequence, and a stop_id-based comparison
+    would wrongly treat the earlier occurrence's drop as "still listed"
+    because of the later occurrence.
+
+    A given (trip, stop_sequence) can legitimately appear more than once in
+    the returned list: the feed occasionally re-lists a batch of already-
+    dropped stops in one snapshot before dropping them again (see
+    docs/validation/observed_time_*.md, "stops that dropped more than
+    once"), so this is not asserted unique - unlike fetch_stu_details below,
+    whose dict/join keying bug this same class of fix also covers."""
     events: list[dict] = []
     for trip_key, snaps in timelines.items():
         trip_id, start_date = trip_meta[trip_key]
         for i in range(len(snaps) - 1):
             ts_a, stops_a, seqs_a = snaps[i]
-            ts_b, stops_b, _seqs_b = snaps[i + 1]
-            set_b = set(stops_b)
+            ts_b, _stops_b, seqs_b = snaps[i + 1]
+            set_seqs_b = set(seqs_b)
             dropped = [
-                (sid, seq) for sid, seq in zip(stops_a, seqs_a, strict=True) if sid not in set_b
+                (sid, seq)
+                for sid, seq in zip(stops_a, seqs_a, strict=True)
+                if seq not in set_seqs_b
             ]
             if not dropped:
                 continue
@@ -566,6 +595,60 @@ def collect_drop_events(timelines: dict, trip_meta: dict) -> list[dict]:
                     }
                 )
     return events
+
+
+def find_repeat_drops(events: list[dict]) -> dict[tuple, list[dict]]:
+    """Groups drop events by (trip_id, start_date, stop_seq); returns only
+    the keys with more than one drop event, each list ordered by last_ts."""
+    groups: dict[tuple, list[dict]] = {}
+    for e in events:
+        key = (e["trip_id"], e["start_date"], e["stop_seq"])
+        groups.setdefault(key, []).append(e)
+    return {
+        key: sorted(evs, key=lambda e: e["last_ts"]) for key, evs in groups.items() if len(evs) > 1
+    }
+
+
+def find_reappearance_events(
+    timelines: dict, trip_meta: dict, repeat_drops: dict[tuple, list[dict]]
+) -> list[dict]:
+    """For every repeat-dropped (trip, stop_seq), finds each moment the stop
+    reappears in the trip's own stop_time_update list having previously been
+    absent (every False->True presence transition after the first drop)."""
+    trip_stop_seqs: dict[str, set[int]] = {}
+    for (_trip_id, _start_date, stop_seq), drops in repeat_drops.items():
+        trip_stop_seqs.setdefault(drops[0]["trip_key"], set()).add(stop_seq)
+
+    events: list[dict] = []
+    for trip_key, stop_seqs in trip_stop_seqs.items():
+        trip_id, start_date = trip_meta[trip_key]
+        snaps = timelines[trip_key]
+        for stop_seq in stop_seqs:
+            prev_present = None
+            for ts, _stops, seqs in snaps:
+                present = stop_seq in seqs
+                if prev_present is False and present:
+                    events.append(
+                        {
+                            "trip_key": trip_key,
+                            "trip_id": trip_id,
+                            "start_date": start_date,
+                            "stop_seq": stop_seq,
+                            "reappear_ts": ts,
+                        }
+                    )
+                prev_present = present
+    return events
+
+
+def group_reappearance_events(reappearances: list[dict]) -> dict[tuple, list[int]]:
+    """Groups reappearance events by (trip_key, reappear_ts): stops that
+    reappear together, in the same snapshot, form one reappearance event."""
+    groups: dict[tuple, list[int]] = {}
+    for e in reappearances:
+        key = (e["trip_key"], e["reappear_ts"])
+        groups.setdefault(key, []).append(e["stop_seq"])
+    return groups
 
 
 def classify_leaving(timelines: dict, trip_meta: dict, final_stop_lookup: dict) -> dict:
@@ -610,6 +693,10 @@ def classify_leaving(timelines: dict, trip_meta: dict, final_stop_lookup: dict) 
 
 
 def fetch_stu_details(con: duckdb.DuckDBPyConnection, keys: list[tuple]) -> dict:
+    """keys: (trip_id, start_date, header_timestamp, stop_sequence) tuples.
+    Keyed and joined on stop_sequence, not stop_id: a looping trip can
+    revisit the same stop_id, and a stop_id-keyed join or dict would fan out
+    or silently overwrite one occurrence's detail with the other's."""
     if not keys:
         return {}
     # con.executemany() is pathologically slow at this row count (tens of
@@ -619,23 +706,23 @@ def fetch_stu_details(con: duckdb.DuckDBPyConnection, keys: list[tuple]) -> dict
             "trip_id": [k[0] for k in keys],
             "start_date": [k[1] for k in keys],
             "header_timestamp": [k[2] for k in keys],
-            "stop_id": [k[3] for k in keys],
+            "stop_sequence": [k[3] for k in keys],
         }
     )
     con.register("event_keys_src", key_table)
     con.execute("CREATE OR REPLACE TEMP TABLE event_keys AS SELECT * FROM event_keys_src")
     con.unregister("event_keys_src")
     rows = con.execute(
-        "SELECT r.trip_id, r.start_date, r.header_timestamp, r.stop_id, "
+        "SELECT r.trip_id, r.start_date, r.header_timestamp, r.stop_sequence, "
         "r.arrival_time_present, r.arrival_time, r.arrival_delay_present, r.arrival_delay, "
         "r.departure_time_present, r.departure_time, r.departure_delay_present, r.departure_delay "
         "FROM rows_dedup r JOIN event_keys k "
         "ON r.trip_id = k.trip_id AND COALESCE(r.start_date,'') = COALESCE(k.start_date,'') "
-        "AND r.header_timestamp = k.header_timestamp AND r.stop_id = k.stop_id"
+        "AND r.header_timestamp = k.header_timestamp AND r.stop_sequence = k.stop_sequence"
     ).fetchall()
     out = {}
-    for tid, sd, ts, sid, atp, at, adp, ad, dtp, dtt, ddp, dd in rows:
-        out[(tid, sd, ts, sid)] = {
+    for tid, sd, ts, seq, atp, at, adp, ad, dtp, dtt, ddp, dd in rows:
+        out[(tid, sd, ts, seq)] = {
             "arrival_time_present": atp,
             "arrival_time": at,
             "arrival_delay_present": adp,
@@ -645,7 +732,50 @@ def fetch_stu_details(con: duckdb.DuckDBPyConnection, keys: list[tuple]) -> dict
             "departure_delay_present": ddp,
             "departure_delay": dd,
         }
+    if len(rows) != len(out):
+        raise AssertionError(
+            f"fetch_stu_details join fanned out on (trip_id, start_date, header_timestamp, "
+            f"stop_sequence): {len(rows)} rows, {len(out)} distinct keys"
+        )
     return out
+
+
+def fetch_trip_snapshot_signatures(
+    con: duckdb.DuckDBPyConnection, trip_id: str, start_date: str | None
+) -> dict[int, frozenset]:
+    """Per-header_timestamp signature of one trip's active stop_time_update
+    list: the set of (stop_sequence, arrival_time, arrival_uncertainty,
+    departure_time, departure_uncertainty) tuples present at that snapshot.
+    Used to test whether a reappearance snapshot exactly repeats an earlier
+    one (a stale/duplicate publish), rather than being a fresh update."""
+    rows = con.execute(
+        "SELECT header_timestamp, stop_sequence, "
+        "CASE WHEN arrival_time_present THEN arrival_time END, "
+        "CASE WHEN arrival_uncertainty_present THEN arrival_uncertainty END, "
+        "CASE WHEN departure_time_present THEN departure_time END, "
+        "CASE WHEN departure_uncertainty_present THEN departure_uncertainty END "
+        "FROM rows_dedup WHERE trip_id = ? AND COALESCE(start_date,'') = ? AND stop_id IS NOT NULL "
+        "ORDER BY header_timestamp",
+        [trip_id, start_date or ""],
+    ).fetchall()
+    sigs: dict[int, set] = {}
+    for ts, seq, arr_t, arr_u, dep_t, dep_u in rows:
+        sigs.setdefault(ts, set()).add((seq, arr_t, arr_u, dep_t, dep_u))
+    return {ts: frozenset(s) for ts, s in sigs.items()}
+
+
+def fetch_trip_tu_timestamps(
+    con: duckdb.DuckDBPyConnection, trip_id: str, start_date: str | None
+) -> dict[int, tuple[bool, int | None]]:
+    """header_timestamp -> (tu_timestamp_present, tu_timestamp) for one trip:
+    the trip-level TripUpdate.timestamp, not the feed header's timestamp."""
+    rows = con.execute(
+        "SELECT DISTINCT header_timestamp, tu_timestamp_present, tu_timestamp "
+        "FROM rows_dedup WHERE trip_id = ? AND COALESCE(start_date,'') = ? "
+        "ORDER BY header_timestamp",
+        [trip_id, start_date or ""],
+    ).fetchall()
+    return {ts: (present, tut) for ts, present, tut in rows}
 
 
 def fetch_static_scheduled_times(con: duckdb.DuckDBPyConnection, keys: list[tuple]) -> dict:

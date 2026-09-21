@@ -16,6 +16,7 @@ from validate_held_values import (
     build_vp_reconciliation,
     check2_cross_tab,
     check3,
+    check7_reappeared_stops,
     scheduled_time_utc,
     v2_passage_at_radius,
 )
@@ -635,3 +636,88 @@ def test_reconciliation_fails_loudly_when_v3_and_v4_counts_disagree():
 
     with pytest.raises(AssertionError):
         build_vp_reconciliation(con, n_v4=1)
+
+
+# --------------------------------------------------------------------------
+# Stops that reappeared after dropping: the held value must come from the
+# final appearance, even when an earlier snapshot's value differs.
+# --------------------------------------------------------------------------
+
+
+def test_held_value_is_taken_from_the_final_appearance_after_a_reappearance():
+    con = duckdb.connect()
+    rows = [
+        {
+            "trip_id": "TR",
+            "stop_id": "S1",
+            "stop_sequence": 1,
+            "header_timestamp": 100,
+            "held_time": 500,
+            "changed": True,
+        },
+        # gap at ts=120: the stop dropped (no row - absence isn't a row here)
+        {
+            "trip_id": "TR",
+            "stop_id": "S1",
+            "stop_sequence": 1,
+            "header_timestamp": 140,
+            "held_time": 999,
+            "changed": True,
+        },
+        # dropped again after ts=140 for good
+    ]
+    _register_held_series_annotated(con, rows)
+
+    build_held_value_summary(con)
+
+    held_value, held_ts = con.execute(
+        "SELECT held_value, held_ts FROM held_value_check1"
+    ).fetchone()
+
+    assert held_value == 999
+    assert held_ts == 140
+
+
+def test_check7_compares_pre_drop_value_against_the_final_appearance():
+    con = duckdb.connect()
+    rows = [
+        {
+            "trip_id": "TR",
+            "stop_id": "S1",
+            "stop_sequence": 1,
+            "header_timestamp": 100,
+            "held_time": 500,
+            "held_uncertainty_present": True,
+            "changed": True,
+        },
+        {
+            "trip_id": "TR",
+            "stop_id": "S1",
+            "stop_sequence": 1,
+            "header_timestamp": 140,
+            "held_time": 560,
+            "held_uncertainty_present": False,
+            "changed": True,
+        },
+    ]
+    _register_held_series_annotated(con, rows)
+    build_held_value_summary(con)
+
+    snap_tbl = pa.table(
+        {
+            "trip_id": ["TR", "TR", "TR", "TR"],
+            "start_date": pa.array([None, None, None, None], type=pa.string()),
+            "header_timestamp": [100, 120, 140, 160],
+            "stop_seqs": [[1], [], [1], []],
+        }
+    )
+    con.register("snap_src", snap_tbl)
+    con.execute("CREATE OR REPLACE TABLE held_trip_snapshot_stops AS SELECT * FROM snap_src")
+    con.unregister("snap_src")
+
+    result = check7_reappeared_stops(con)
+
+    assert result["n"] == 1
+    assert result["n_differs"] == 1
+    assert result["diff_percentiles"][50] == 60
+    assert result["marker_matrix"] == {(True, False): 1}

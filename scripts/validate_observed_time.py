@@ -36,11 +36,16 @@ from koda_scan_lib import (
     fetch_static_stop_lookup,
     fetch_stu_details,
     fetch_target_trip_meta,
+    fetch_trip_snapshot_signatures,
     fetch_trip_timelines,
+    fetch_trip_tu_timestamps,
+    find_reappearance_events,
+    find_repeat_drops,
     fmt_pct_list,
     fmt_share,
     fmt_ts_both,
     git_commit_hash,
+    group_reappearance_events,
     gtfs_hms_to_unix,
     load_static_gtfs,
     percentile,
@@ -168,10 +173,90 @@ def section_stop_drops(events: list[dict]) -> dict:
     }
 
 
+def section_repeat_drops(
+    con: duckdb.DuckDBPyConnection,
+    events: list[dict],
+    timelines: dict,
+    trip_meta: dict,
+) -> dict:
+    """Stops that dropped more than once: the feed occasionally re-lists a
+    batch of already-dropped stops in one snapshot before dropping them
+    again. Characterises each reappearance: whether the trip's stop list at
+    that snapshot exactly repeats an earlier one (a stale/duplicate publish),
+    and whether the trip-level TripUpdate.timestamp goes backwards."""
+    repeat_drops = find_repeat_drops(events)
+    reappearances = find_reappearance_events(timelines, trip_meta, repeat_drops)
+    groups = group_reappearance_events(reappearances)
+
+    trips_affected = {(tid, sd) for tid, sd, _seq in repeat_drops}
+    n_repeat_drop_occurrences = sum(len(v) - 1 for v in repeat_drops.values())
+    stops_per_event = [len(seqs) for seqs in groups.values()]
+
+    sig_cache: dict[str, dict[int, frozenset]] = {}
+    tu_cache: dict[str, dict[int, tuple[bool, int | None]]] = {}
+    n_identical = 0
+    n_not_identical = 0
+    distances: list[int] = []
+    n_tu_present_at_reappear = 0
+    n_tu_pairs_both_present = 0
+    n_tu_backwards = 0
+
+    by_group: dict[tuple, dict] = {}
+    for e in reappearances:
+        by_group.setdefault((e["trip_key"], e["reappear_ts"]), e)
+
+    for (trip_key, reappear_ts), sample in by_group.items():
+        trip_id, start_date = sample["trip_id"], sample["start_date"]
+
+        if trip_key not in sig_cache:
+            sig_cache[trip_key] = fetch_trip_snapshot_signatures(con, trip_id, start_date)
+        sigs = sig_cache[trip_key]
+        sig_r = sigs.get(reappear_ts)
+        earlier_matches = [ts for ts, s in sigs.items() if ts < reappear_ts and s == sig_r]
+        if earlier_matches:
+            n_identical += 1
+            distances.append(reappear_ts - max(earlier_matches))
+        else:
+            n_not_identical += 1
+
+        if trip_key not in tu_cache:
+            tu_cache[trip_key] = fetch_trip_tu_timestamps(con, trip_id, start_date)
+        tus = tu_cache[trip_key]
+        present_r, tu_r = tus.get(reappear_ts, (False, None))
+        if present_r:
+            n_tu_present_at_reappear += 1
+        prev_candidates = [ts for ts in tus if ts < reappear_ts]
+        if prev_candidates:
+            present_prev, tu_prev = tus[max(prev_candidates)]
+            if present_r and present_prev:
+                n_tu_pairs_both_present += 1
+                if tu_r < tu_prev:
+                    n_tu_backwards += 1
+
+    return {
+        "n_trips_affected": len(trips_affected),
+        "n_stop_events_affected": len(repeat_drops),
+        "n_repeat_drop_occurrences": n_repeat_drop_occurrences,
+        "n_reappearance_events": len(groups),
+        "stops_per_event_percentiles": {
+            q: percentile(stops_per_event, q) for q in (25, 50, 75, 95)
+        },
+        "n_stops_per_event": len(stops_per_event),
+        "n_identical": n_identical,
+        "n_not_identical": n_not_identical,
+        "distance_percentiles": {q: percentile(distances, q) for q in (25, 50, 75, 95)},
+        "n_distances": len(distances),
+        "n_tu_present_at_reappear": n_tu_present_at_reappear,
+        "n_tu_pairs_both_present": n_tu_pairs_both_present,
+        "n_tu_backwards": n_tu_backwards,
+        "repeat_drop_keys": set(repeat_drops.keys()),
+    }
+
+
 def build_prediction_entries(
     con: duckdb.DuckDBPyConnection, svc_date_obj: date, events: list[dict], use_arrival_first: bool
 ) -> list[dict]:
-    stu_keys = [(e["trip_id"], e["start_date"], e["last_ts"], e["stop_id"]) for e in events]
+    stu_keys = [(e["trip_id"], e["start_date"], e["last_ts"], e["stop_seq"]) for e in events]
     sched_keys = [(e["trip_id"], e["stop_seq"]) for e in events]
     stu_details = fetch_stu_details(con, stu_keys)
     sched_times = fetch_static_scheduled_times(con, sched_keys)
@@ -179,7 +264,7 @@ def build_prediction_entries(
 
     entries = []
     for e in events:
-        detail = stu_details.get((e["trip_id"], e["start_date"], e["last_ts"], e["stop_id"]))
+        detail = stu_details.get((e["trip_id"], e["start_date"], e["last_ts"], e["stop_seq"]))
         if detail is None:
             entries.append({"offset": None, "source": "missing_stu_row", "position": None})
             continue
@@ -206,12 +291,25 @@ def section_prediction_vs_drop(
     clean_events: list[dict],
     final_only_events: list[dict],
     snapshot_ts: list[int],
+    repeat_drop_keys: set[tuple],
 ) -> dict:
     departure_entries = build_prediction_entries(
         con, svc_date_obj, clean_events, use_arrival_first=False
     )
     arrival_entries = build_prediction_entries(
         con, svc_date_obj, clean_events, use_arrival_first=True
+    )
+
+    clean_events_excl = [
+        e
+        for e in clean_events
+        if (e["trip_id"], e["start_date"], e["stop_seq"]) not in repeat_drop_keys
+    ]
+    departure_entries_excl = build_prediction_entries(
+        con, svc_date_obj, clean_events_excl, use_arrival_first=False
+    )
+    arrival_entries_excl = build_prediction_entries(
+        con, svc_date_obj, clean_events_excl, use_arrival_first=True
     )
 
     final_events_with_next = []
@@ -227,6 +325,9 @@ def section_prediction_vs_drop(
     return {
         "departure": summarize_prediction_entries(departure_entries),
         "arrival": summarize_prediction_entries(arrival_entries),
+        "departure_excl_repeat": summarize_prediction_entries(departure_entries_excl),
+        "arrival_excl_repeat": summarize_prediction_entries(arrival_entries_excl),
+        "n_excluded_repeat": len(clean_events) - len(clean_events_excl),
         "final_stop_arrival": summarize_prediction_entries(final_entries),
         "n_final_events": len(final_events_with_next),
     }
@@ -313,10 +414,16 @@ def run_lifecycle_for_subset(
     leaving = classify_leaving(timelines, trip_meta, final_lookup)
     drop_events = collect_drop_events(timelines, trip_meta)
     drops = section_stop_drops(drop_events)
+    repeats = section_repeat_drops(con, drop_events, timelines, trip_meta)
     pred = section_prediction_vs_drop(
-        con, svc_date_obj, drops["clean_events"], leaving["final_only_events"], snapshot_ts
+        con,
+        svc_date_obj,
+        drops["clean_events"],
+        leaving["final_only_events"],
+        snapshot_ts,
+        repeats["repeat_drop_keys"],
     )
-    return {"leaving": leaving, "drops": drops, "pred": pred}
+    return {"leaving": leaving, "drops": drops, "repeats": repeats, "pred": pred}
 
 
 # --------------------------------------------------------------------------
@@ -461,7 +568,7 @@ def render_report(ctx: dict) -> str:
     render_leaving(ctx["leaving"], "## 4. How trips leave the feed")
 
     # Section 5
-    def render_drops(drops: dict, heading: str) -> None:
+    def render_drops(drops: dict, repeats: dict, heading: str) -> None:
         lines.append(heading)
         lines.append("")
         total = drops["total_events"]
@@ -481,7 +588,48 @@ def render_report(ctx: dict) -> str:
         )
         lines.append("")
 
-    render_drops(ctx["drops"], "## 5. Stop drops")
+        lines.append("**Stops that dropped more than once:**")
+        lines.append("")
+        lines.append(f"- Trips affected: {repeats['n_trips_affected']}")
+        lines.append(f"- Distinct stop events affected: {repeats['n_stop_events_affected']}")
+        lines.append(
+            f"- Repeat drops (occurrences beyond the first): {repeats['n_repeat_drop_occurrences']}"
+        )
+        lines.append(
+            f"- Reappearance events (one snapshot, one or more stops): {repeats['n_reappearance_events']}"
+        )
+        if repeats["n_stops_per_event"]:
+            lines.append(
+                f"- Stops reappearing per event (n={repeats['n_stops_per_event']}): "
+                f"{fmt_pct_list(repeats['stops_per_event_percentiles'])}"
+            )
+        lines.append("")
+
+        if repeats["n_reappearance_events"]:
+            lines.append("**Reappearance characterisation:**")
+            lines.append("")
+            lines.append(
+                f"- Reappearance snapshot identical to an earlier snapshot of the same trip "
+                f"(same stop_sequences, same times, same uncertainty): "
+                f"{fmt_share(repeats['n_identical'], repeats['n_reappearance_events'])}"
+            )
+            if repeats["n_distances"]:
+                lines.append(
+                    f"  - How far back the matching snapshot is (s), n={repeats['n_distances']}: "
+                    f"{fmt_pct_list(repeats['distance_percentiles'])}"
+                )
+            lines.append(
+                f"- Trip-level TripUpdate.timestamp populated at the reappearance snapshot: "
+                f"{fmt_share(repeats['n_tu_present_at_reappear'], repeats['n_reappearance_events'])}"
+            )
+            lines.append(
+                f"- Of those with the timestamp also populated at the trip's prior snapshot "
+                f"(n={repeats['n_tu_pairs_both_present']}), it goes backwards: "
+                f"{fmt_share(repeats['n_tu_backwards'], repeats['n_tu_pairs_both_present'])}"
+            )
+            lines.append("")
+
+    render_drops(ctx["drops"], ctx["repeats"], "## 5. Stop drops")
 
     # Section 6
     st = ctx["stale"]
@@ -508,6 +656,24 @@ def render_report(ctx: dict) -> str:
         lines.append("")
         lines.extend(
             render_prediction_block("Predicted arrival (arrival-first fallback)", pred["arrival"])
+        )
+        lines.append("")
+        lines.append(
+            f"Excluding {pred['n_excluded_repeat']} clean drops of stops that dropped more than "
+            "once, same statistics:"
+        )
+        lines.append("")
+        lines.extend(
+            render_prediction_block(
+                "Predicted departure, excluding repeat-dropped stops",
+                pred["departure_excl_repeat"],
+            )
+        )
+        lines.append("")
+        lines.extend(
+            render_prediction_block(
+                "Predicted arrival, excluding repeat-dropped stops", pred["arrival_excl_repeat"]
+            )
         )
         lines.append("")
         lines.extend(
@@ -559,7 +725,7 @@ def render_report(ctx: dict) -> str:
         for rt in route_types:
             sub = ctx["route_type_sections"][rt]
             render_leaving(sub["leaving"], f"### route_type={rt}: how trips leave the feed")
-            render_drops(sub["drops"], f"### route_type={rt}: stop drops")
+            render_drops(sub["drops"], sub["repeats"], f"### route_type={rt}: stop drops")
             render_prediction(sub["pred"], f"### route_type={rt}: prediction vs drop time")
 
     # Section 10
@@ -610,6 +776,15 @@ def build_observations(ctx: dict) -> list[str]:
         obs.append(
             f"{drops['not_from_front_count']} drops were not from the front of the list and "
             f"{drops['multi_drop_count']} intervals dropped 2+ stops at once, out of {drops['total_events']} total."
+        )
+    repeats = ctx["repeats"]
+    if repeats["n_stop_events_affected"]:
+        obs.append(
+            f"{repeats['n_stop_events_affected']} stop events across {repeats['n_trips_affected']} trip(s) "
+            f"dropped more than once ({repeats['n_repeat_drop_occurrences']} repeat drops total), in "
+            f"{repeats['n_reappearance_events']} reappearance event(s); "
+            f"{fmt_share(repeats['n_identical'], repeats['n_reappearance_events'])} reproduce an earlier "
+            "snapshot of the same trip exactly."
         )
     st = ctx["stale"]
     if st["60s"]:
@@ -718,6 +893,7 @@ def main() -> int:
         "trip_level": trip_level,
         "leaving": lifecycle["leaving"],
         "drops": lifecycle["drops"],
+        "repeats": lifecycle["repeats"],
         "prediction": lifecycle["pred"],
         "stale": stale,
         "first_stops": first_stops,
