@@ -1,0 +1,25 @@
+#!/bin/sh
+# commit-msg hook: strips AI attribution from commit messages.
+#
+# Backstop for Claude Code's "attribution" setting, which has known bugs
+# (trailers still added on some versions, plus a newer Claude-Session trailer
+# that ignores the setting). Do not bypass with --no-verify.
+
+msg_file="$1"
+pattern='^[[:space:]]*co-authored-by:.*(claude|anthropic)|generated with.*claude|^[[:space:]]*claude-session:|claude\.ai/code/session'
+
+if grep -Eiq "$pattern" "$msg_file"; then
+    tmp="$msg_file.tmp.$$"
+    grep -Eiv "$pattern" "$msg_file" \
+        | awk 'NF { while (blank > 0) { print ""; blank-- } print; next } { blank++ }' \
+        > "$tmp"
+    mv "$tmp" "$msg_file"
+    echo "commit-msg: removed AI attribution lines from commit message" >&2
+fi
+
+if ! grep -Eq '[^[:space:]]' "$msg_file"; then
+    echo "commit-msg: commit message is empty after cleanup, aborting" >&2
+    exit 1
+fi
+
+exit 0

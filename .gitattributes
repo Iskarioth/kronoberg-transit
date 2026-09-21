@@ -1,0 +1,11 @@
+# Normalise line endings to LF. Required for .githooks/commit-msg to run
+# under Git Bash on Windows; a CRLF shebang breaks the hook.
+* text=auto eol=lf
+
+*.7z       binary
+*.pb       binary
+*.parquet  binary
+*.duckdb   binary
+*.zip      binary
+*.png      binary
+*.jpg      binary
