@@ -208,3 +208,41 @@ The Measurement point moves from PROVISIONAL to FIXED.
   this as a limitation.
 - The transform still extracts final-stop events with their marker flag, so this
   choice can be revisited without refetching.
+
+---
+
+## D-009 · 2026-09-21 · Skipped stops, and what coverage counts
+
+**Decision:** A stop event whose last realtime value is marked `SKIPPED` is excluded
+from punctuality and reported as a skipped-stop rate. It is never counted as on time
+and never labelled unobserved. A trip is cancelled when its last appearance in
+TripUpdates is marked `CANCELED`. Stop events on cancelled trips and skipped stop
+events are excluded from both counts in coverage. Every scheduled stop event at the
+measurement point gets exactly one status, checked in this order: cancelled, skipped,
+observed, unobserved.
+
+**Reason:**
+
+- The feed does mark stops `SKIPPED`: 2,490 stop updates on 2026-09-07, none on
+  2026-09-06. D-005 had assumed it never did.
+- A skipped stop is a positive statement that the stop was not served, not a gap in the
+  data. Labelling it unobserved would misreport it, and counting it as on time would
+  hide a service failure.
+- Coverage did not say whether cancelled trips and skipped stops were in its
+  denominator. Leaving them in would count one cancellation twice: once in the
+  cancellation rate and again as lost coverage. Coverage should measure how much of the
+  service that ran is observed.
+- Trip-level `CANCELED` is rare (82 trip observations across 2 trips on 2026-09-07, none
+  on 2026-09-06). Reading the status from the trip's last appearance matches how D-007
+  reads stop values, and handles a trip whose status changes.
+- Without a fixed order, a skipped stop's last value, which carries no recorded-time
+  marker, would also qualify as unobserved under D-007.
+
+**Consequences:**
+
+- The transform assigns one status per stop event, in the order above.
+- A trip cancelled after it started loses its already-observed departures from
+  punctuality. With 2 cancelled trips on the validated weekday, this is accepted for
+  simplicity.
+- The route-day output needs a skipped-stop count and rate. `docs/data_dictionary.md` is
+  updated when the aggregation is built.

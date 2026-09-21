@@ -47,9 +47,11 @@ Status labels:
 
 | Item | Definition | Status |
 |---|---|---|
-| Cancelled trips | Trips with `schedule_relationship = CANCELED` are excluded from punctuality and reported separately as a cancellation rate | FIXED |
-| Unobserved stop events | Scheduled stop events with no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007), are labelled `unobserved`. They are **never** counted as on time and never silently dropped | FIXED |
-| Coverage | Observed stop events ÷ scheduled stop events at the measurement point (final stops excluded, D-008), per route and day. Reported alongside every punctuality figure | FIXED |
+| Cancelled trips | Trips whose last appearance in TripUpdates has `schedule_relationship = CANCELED`. Their stop events are excluded from punctuality and coverage, and cancelled trips are reported separately as a cancellation rate: cancelled trips ÷ scheduled trips, per route and day (D-009) | FIXED |
+| Skipped stops | Stop events at the measurement point whose last realtime value (from the last snapshot in which the stop appears, as in the Observed time rule) has `schedule_relationship = SKIPPED`. Excluded from punctuality and coverage, and reported separately as a skipped-stop rate: skipped stop events ÷ scheduled stop events at the measurement point on trips that were not cancelled, per route and day (D-009) | FIXED |
+| Unobserved stop events | Scheduled stop events that are not on a cancelled trip, not skipped (D-009), and have no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007). They are labelled `unobserved`, **never** counted as on time and never silently dropped | FIXED |
+| Stop event status | Every scheduled stop event at the measurement point gets exactly one status, checked in this order: `cancelled` (on a cancelled trip), `skipped`, `observed`, `unobserved` (D-009) | FIXED |
+| Coverage | Observed stop events ÷ scheduled stop events at the measurement point (final stops excluded, D-008), per route and day. Stop events on cancelled trips and skipped stop events are excluded from both counts, since each is reported in its own rate (D-009). Reported alongside every punctuality figure | FIXED |
 | Minimum coverage | Below which a route-day is flagged as unreliable in reporting | OPEN |
 | Added trips | Trips in realtime with no matching scheduled trip: counted and logged, excluded from punctuality | PROVISIONAL |
 | Recorded-time marker share | Stop events at the measurement point whose held value carries `uncertainty = 0`, divided by stop events at the measurement point with a held value, per service day. Reported in data_quality. A drop signals a change in the operator's system | FIXED |
