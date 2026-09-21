@@ -1,0 +1,259 @@
+# Held-value validation scan: 2026-09-07
+
+Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a definition. It tests whether D-005's held value is a recorded actual time or a stale prediction, using TripUpdates alone and, where run, an independent VehiclePositions passage check.
+
+## Header
+
+- Service date: 2026-09-07
+- Feeds: TripUpdates, VehiclePositions
+- Hours present (TripUpdates): 24/24 (missing: none)
+- Snapshot count (deduplicated): 4143
+- First snapshot: 2026-09-07T02:39:03+00:00 UTC / 2026-09-07T04:39:03+02:00 Europe/Stockholm
+- Last snapshot: 2026-09-07T21:59:39+00:00 UTC / 2026-09-07T23:59:39+02:00 Europe/Stockholm
+- Git commit: e3c5f50c19ff17e69f09d6c5a1175daa1c8a2ab5
+- Run timestamp (UTC): 2026-09-21T11:11:42Z
+
+## Exclusions
+
+- CANCELED trip (snapshot, trip) observations excluded: 82
+- SKIPPED stop_time_updates excluded: 2490
+
+## Check 1: frozen or drifting
+
+Among 47071 (trip, stop) pairs with a held value:
+- Reach t_cross: 46591 / 47071 (99.0%)
+- Zero changes after t_cross: 13466 / 46591 (28.9%)
+- Drift (held value minus value at t_cross): n=46591
+  - percentiles (s): p1=-6.0, p5=0.0, p25=0.0, p50=13.0, p75=30.0, p95=72.0, p99=239.1
+  - <=±15s: 53.9%, <=±30s: 75.3%, <=±60s: 92.4%
+- t_last_change minus t_cross (s), n=46591: p5=0.0, p25=0.0, p50=16.0, p75=37.0, p95=86.0
+- held value minus t_last_change (s), n=47071: p5=-31.0, p25=-20.0, p50=-15.0, p75=-10.0, p95=16.0
+
+By how the stop left:
+- Mid-route drop: n=31159, reach t_cross=31114 / 31159 (99.9%), drift median=13.0s
+- Trip removal: n=15912, reach t_cross=15477 / 15912 (97.3%), drift median=12.0s
+
+By whether uncertainty is present on the held value:
+- Present: n=45211, drift median=13.0s, drift p95=69.0s
+- Absent: n=1860, drift median=0.0s, drift p95=1083.6999999999985s
+
+## Check 2: uncertainty
+
+**Arrival** (n=5067528):
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 1264226), ('absent', '0-60s_future', 180510), ('present_zero', '0-60s_past', 136904), ('absent', '0-60s_past', 62360), ('absent', '>60s_past', 6589), ('absent', '>60s_future', 3416939)]
+- Non-zero uncertainty values: none observed
+- Stops where uncertainty ever appears: 44748; appears then later disappears: 146
+- (now minus time) at first appearance of uncertainty (s), n=44895: p5=4.0, p25=9.0, p50=15.0, p75=22.0, p95=39.0
+
+**Departure** (n=5067524):
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '0-60s_past', 139927), ('absent', '0-60s_past', 73393), ('present_zero', '>60s_past', 1228846), ('absent', '0-60s_future', 183406), ('absent', '>60s_past', 6723), ('absent', '>60s_future', 3435229)]
+- Non-zero uncertainty values: none observed
+- Stops where uncertainty ever appears: 44363; appears then later disappears: 146
+- (now minus time) at first appearance of uncertainty (s), n=44510: p5=6.0, p25=11.0, p50=15.0, p75=20.0, p95=30.0
+
+## Check 3: trip removal
+
+Among 2034 trip removals:
+- Completed (all remaining stops in the past): 1585 / 2034 (77.9%)
+- Left early (at least one remaining stop in the future): 449 / 2034 (22.1%)
+- Future-stops-remaining percentiles for left-early trips (n=449): p25=1.0, p50=1.0, p75=1.0, p95=1.0
+- Left-early trips where the final stop is among the future stops: 448 / 449 (99.8%)
+- Removal time minus final stop's held arrival.time, completed trips with final stop present (n=1584 of 1585 completed): p5=1.0, p25=5.0, p50=10.0, p75=20.0, p95=44.0
+
+## Check 4: time vs delay
+
+**Arrival** ((time - delay) minus scheduled time in UTC, n=5067528):
+- Exactly 0: 5067528 / 5067528 (100.0%)
+- Within ±60s: 5067528 / 5067528 (100.0%)
+- Percentiles (s): p1=0.0, p5=0.0, p25=0.0, p50=0.0, p75=0.0, p95=0.0, p99=0.0
+**Departure** ((time - delay) minus scheduled time in UTC, n=5067524):
+- Exactly 0: 5067524 / 5067524 (100.0%)
+- Within ±60s: 5067524 / 5067524 (100.0%)
+- Percentiles (s): p1=0.0, p5=0.0, p25=0.0, p50=0.0, p75=0.0, p95=0.0, p99=0.0
+
+## Check 5: loose ends
+
+**5a. Per-hour table** (hour, archive_files, distinct_header_timestamps, first_ts, last_ts, trip_entities):
+- 04: files=89, distinct_ts=79, first=2026-09-07T02:39:03+00:00 UTC / 2026-09-07T04:39:03+02:00 Europe/Stockholm, last=2026-09-07T02:59:54+00:00 UTC / 2026-09-07T04:59:54+02:00 Europe/Stockholm, trip_entities=7
+- 05: files=250, distinct_ts=216, first=2026-09-07T02:59:54+00:00 UTC / 2026-09-07T04:59:54+02:00 Europe/Stockholm, last=2026-09-07T03:59:43+00:00 UTC / 2026-09-07T05:59:43+02:00 Europe/Stockholm, trip_entities=84
+- 06: files=250, distinct_ts=223, first=2026-09-07T03:59:58+00:00 UTC / 2026-09-07T05:59:58+02:00 Europe/Stockholm, last=2026-09-07T04:59:47+00:00 UTC / 2026-09-07T06:59:47+02:00 Europe/Stockholm, trip_entities=252
+- 07: files=252, distinct_ts=219, first=2026-09-07T05:00:03+00:00 UTC / 2026-09-07T07:00:03+02:00 Europe/Stockholm, last=2026-09-07T05:59:40+00:00 UTC / 2026-09-07T07:59:40+02:00 Europe/Stockholm, trip_entities=300
+- 08: files=250, distinct_ts=217, first=2026-09-07T05:59:56+00:00 UTC / 2026-09-07T07:59:56+02:00 Europe/Stockholm, last=2026-09-07T06:59:42+00:00 UTC / 2026-09-07T08:59:42+02:00 Europe/Stockholm, trip_entities=248
+- 09: files=249, distinct_ts=217, first=2026-09-07T06:59:59+00:00 UTC / 2026-09-07T08:59:59+02:00 Europe/Stockholm, last=2026-09-07T07:59:34+00:00 UTC / 2026-09-07T09:59:34+02:00 Europe/Stockholm, trip_entities=170
+- 10: files=250, distinct_ts=219, first=2026-09-07T07:59:49+00:00 UTC / 2026-09-07T09:59:49+02:00 Europe/Stockholm, last=2026-09-07T08:59:45+00:00 UTC / 2026-09-07T10:59:45+02:00 Europe/Stockholm, trip_entities=144
+- 11: files=253, distinct_ts=223, first=2026-09-07T08:59:45+00:00 UTC / 2026-09-07T10:59:45+02:00 Europe/Stockholm, last=2026-09-07T09:59:48+00:00 UTC / 2026-09-07T11:59:48+02:00 Europe/Stockholm, trip_entities=138
+- 12: files=250, distinct_ts=217, first=2026-09-07T10:00:04+00:00 UTC / 2026-09-07T12:00:04+02:00 Europe/Stockholm, last=2026-09-07T10:59:39+00:00 UTC / 2026-09-07T12:59:39+02:00 Europe/Stockholm, trip_entities=153
+- 13: files=251, distinct_ts=216, first=2026-09-07T11:00:10+00:00 UTC / 2026-09-07T13:00:10+02:00 Europe/Stockholm, last=2026-09-07T11:59:44+00:00 UTC / 2026-09-07T13:59:44+02:00 Europe/Stockholm, trip_entities=153
+- 14: files=255, distinct_ts=219, first=2026-09-07T12:00:00+00:00 UTC / 2026-09-07T14:00:00+02:00 Europe/Stockholm, last=2026-09-07T12:59:42+00:00 UTC / 2026-09-07T14:59:42+02:00 Europe/Stockholm, trip_entities=201
+- 15: files=251, distinct_ts=214, first=2026-09-07T12:59:57+00:00 UTC / 2026-09-07T14:59:57+02:00 Europe/Stockholm, last=2026-09-07T13:59:33+00:00 UTC / 2026-09-07T15:59:33+02:00 Europe/Stockholm, trip_entities=271
+- 16: files=255, distinct_ts=216, first=2026-09-07T14:00:04+00:00 UTC / 2026-09-07T16:00:04+02:00 Europe/Stockholm, last=2026-09-07T14:59:39+00:00 UTC / 2026-09-07T16:59:39+02:00 Europe/Stockholm, trip_entities=317
+- 17: files=250, distinct_ts=215, first=2026-09-07T14:59:55+00:00 UTC / 2026-09-07T16:59:55+02:00 Europe/Stockholm, last=2026-09-07T15:59:35+00:00 UTC / 2026-09-07T17:59:35+02:00 Europe/Stockholm, trip_entities=274
+- 18: files=250, distinct_ts=210, first=2026-09-07T15:59:52+00:00 UTC / 2026-09-07T17:59:52+02:00 Europe/Stockholm, last=2026-09-07T16:59:29+00:00 UTC / 2026-09-07T18:59:29+02:00 Europe/Stockholm, trip_entities=174
+- 19: files=251, distinct_ts=209, first=2026-09-07T16:59:46+00:00 UTC / 2026-09-07T18:59:46+02:00 Europe/Stockholm, last=2026-09-07T17:59:41+00:00 UTC / 2026-09-07T19:59:41+02:00 Europe/Stockholm, trip_entities=110
+- 20: files=249, distinct_ts=213, first=2026-09-07T17:59:57+00:00 UTC / 2026-09-07T19:59:57+02:00 Europe/Stockholm, last=2026-09-07T18:59:41+00:00 UTC / 2026-09-07T20:59:41+02:00 Europe/Stockholm, trip_entities=100
+- 21: files=253, distinct_ts=207, first=2026-09-07T18:59:59+00:00 UTC / 2026-09-07T20:59:59+02:00 Europe/Stockholm, last=2026-09-07T19:59:44+00:00 UTC / 2026-09-07T21:59:44+02:00 Europe/Stockholm, trip_entities=71
+- 22: files=250, distinct_ts=197, first=2026-09-07T20:00:00+00:00 UTC / 2026-09-07T22:00:00+02:00 Europe/Stockholm, last=2026-09-07T20:59:37+00:00 UTC / 2026-09-07T22:59:37+02:00 Europe/Stockholm, trip_entities=55
+- 23: files=251, distinct_ts=199, first=2026-09-07T20:59:54+00:00 UTC / 2026-09-07T22:59:54+02:00 Europe/Stockholm, last=2026-09-07T21:59:39+00:00 UTC / 2026-09-07T23:59:39+02:00 Europe/Stockholm, trip_entities=24
+
+**5b. Unmatched trips' start_date distribution:** not applicable (only run for 2026-09-06)
+
+**5c. Snapshot gaps over 300s** (0 found):
+
+**5d. Trips that leave the feed and come back:**
+- Trips with at least one return: 38
+- Total leave-and-return events: 45
+- Absence duration percentiles (s), n=45: p5=31.0, p25=32.0, p50=33.0, p75=48.0, p95=80.6
+- Stops dropped while absent, percentiles, n=45: p5=0.0, p25=0.0, p50=0.0, p75=0.0, p95=1.0
+
+## V1: field population
+
+Matching deviates from a literal (trip_id, start_date) match: VehiclePositions never carries start_date, and most entities lack a trip descriptor (see field counts and the per-hour breakdown below), so matching is trip_id-only plus a scheduled-time window (first departure - 30 min to final arrival + 90 min, from the static schedule, not TripUpdates). Confirmed with Marcus; see Observations.
+
+Among 14677481 raw VehiclePosition entities:
+- trip_id: 4128137 / 14677481 (28.1%)
+- start_date: 0 / 14677481 (0.0%)
+- vehicle_timestamp: 14677481 / 14677481 (100.0%)
+- position: 14677481 / 14677481 (100.0%)
+- current_status: 0 / 14677481 (0.0%)
+- current_stop_sequence: 0 / 14677481 (0.0%)
+- stop_id: 0 / 14677481 (0.0%)
+- Ping time source used: vehicle.timestamp 14677481 / 14677481 (100.0%), header_timestamp fallback 0 / 14677481 (0.0%)
+- vehicle.timestamp minus header_timestamp (s), n=14677481: p5=-57.0, p25=-37.0, p50=-13.0, p75=-1.0, p95=-1.0
+- Distinct trip_ids seen in VP: 2040
+- ...matched to static schedule: 2040 / 2040 (100.0%)
+- ...matched to TripUpdates matched trips: 2036 / 2040 (99.8%)
+
+**Per-hour trip_id population:**
+- 00: 0 / 610211 (0.0%)
+- 01: 0 / 596003 (0.0%)
+- 02: 0 / 606810 (0.0%)
+- 03: 0 / 607857 (0.0%)
+- 04: 2892 / 601555 (0.5%)
+- 05: 93771 / 601380 (15.6%)
+- 06: 326554 / 608940 (53.6%)
+- 07: 441914 / 612210 (72.2%)
+- 08: 290312 / 612180 (47.4%)
+- 09: 212536 / 614670 (34.6%)
+- 10: 155358 / 612548 (25.4%)
+- 11: 166005 / 613424 (27.1%)
+- 12: 185267 / 610020 (30.4%)
+- 13: 198586 / 616718 (32.2%)
+- 14: 258095 / 616368 (41.9%)
+- 15: 352498 / 610767 (57.7%)
+- 16: 434337 / 621294 (69.9%)
+- 17: 356433 / 614543 (58.0%)
+- 18: 212846 / 619268 (34.4%)
+- 19: 131639 / 613260 (21.5%)
+- 20: 121505 / 612900 (19.8%)
+- 21: 89238 / 612000 (14.6%)
+- 22: 73507 / 615060 (12.0%)
+- 23: 24844 / 617495 (4.0%)
+
+**Per-trip summary** (n=2036 trips with pings):
+- Raw entities per trip: p25=1312.8, p50=1852.0, p75=2488.0, p95=4185.5
+- Distinct pings per trip (after dedup by vehicle_id+vehicle_timestamp): p25=663.0, p50=941.0, p75=1254.2, p95=2082.2
+- Ping time span / scheduled trip duration ratio, n=2036: p5=0.8, p25=0.9, p50=1.0, p75=1.1, p95=1.2
+
+**Assignment dropouts** (trip-less pings from a vehicle, inside one of its trips' scheduled window):
+- Dropout pings: 1318031
+- Trips with at least one dropout ping: 1995
+- Dropout share per trip, n=2036: p25=0.2, p50=0.4, p75=0.5, p95=0.7
+
+**Guardrail check (run before proceeding):** median inter-ping interval = 2.0s (stop threshold: >60s); share of trip-linked pings outside the scheduled window = 0.00% (stop threshold: >10%). Neither triggered.
+
+## V2: passage detection
+
+**R = 25m:**
+- Events detected: 44770 / 47071 (95.1%)
+- No ping within R: 2301 / 47071 (4.9%)
+- Multiple visits: 1225 / 47071 (2.6%)
+- Departure window width (s), n=43866: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1680: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+
+**R = 50m:**
+- Events detected: 45803 / 47071 (97.3%)
+- No ping within R: 1268 / 47071 (2.7%)
+- Multiple visits: 1001 / 47071 (2.1%)
+- Departure window width (s), n=44357: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1799: p25=2.0, p50=2.0, p75=2.0, p95=4.0
+
+**R = 100m:**
+- Events detected: 46037 / 47071 (97.8%)
+- No ping within R: 1034 / 47071 (2.2%)
+- Multiple visits: 993 / 47071 (2.1%)
+- Departure window width (s), n=44206: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1886: p25=2.0, p50=2.0, p75=2.0, p95=4.0
+
+## V3: held value vs VP
+
+**Compact table, R = 25m and R = 100m (overall offset only):**
+- R=25m: n=44878
+  - percentiles (s): p1=-60.0, p5=-11.0, p25=-6.0, p50=-4.0, p75=-2.0, p95=0.0, p99=19.5
+  - <=±15s: 95.8%, <=±30s: 97.8%, <=±60s: 98.6%
+- R=100m: n=46104
+  - percentiles (s): p1=-98.0, p5=-36.0, p25=-17.0, p50=-12.0, p75=-6.5, p95=-3.0, p99=31.0
+  - <=±15s: 67.1%, <=±30s: 91.7%, <=±60s: 97.5%
+
+**R = 50m, full breakdown:**
+- Overall: n=45905
+  - percentiles (s): p1=-72.5, p5=-20.0, p25=-10.0, p50=-6.5, p75=-3.5, p95=-1.0, p99=19.0
+  - <=±15s: 90.9%, <=±30s: 96.9%, <=±60s: 98.5%
+By how the stop left:
+- Mid-route drop: n=30610
+  - percentiles (s): p1=-90.0, p5=-22.0, p25=-10.0, p50=-7.0, p75=-3.0, p95=-2.0, p99=-1.0
+  - <=±15s: 90.6%, <=±30s: 96.8%, <=±60s: 98.3%
+- Trip removal: n=15295
+  - percentiles (s): p1=-41.0, p5=-17.0, p25=-9.0, p50=-6.0, p75=-4.0, p95=9.0, p99=36.0
+  - <=±15s: 91.3%, <=±30s: 97.2%, <=±60s: 98.9%
+By stop position:
+- first: n=1843
+  - percentiles (s): p1=-150.2, p5=-84.9, p25=-27.0, p50=-17.0, p75=-11.0, p95=-8.0, p99=-4.0
+  - <=±15s: 45.1%, <=±30s: 82.1%, <=±60s: 92.2%
+- intermediate: n=42095
+  - percentiles (s): p1=-41.0, p5=-16.0, p25=-9.5, p50=-6.0, p75=-4.0, p95=-2.0, p99=-1.0
+  - <=±15s: 94.1%, <=±30s: 98.1%, <=±60s: 99.0%
+- final: n=1967
+  - percentiles (s): p1=-1801.0, p5=-69.6, p25=-9.0, p50=4.0, p75=13.0, p95=47.0, p99=225.1
+  - <=±15s: 64.6%, <=±30s: 85.9%, <=±60s: 91.9%
+By whether uncertainty is present on the held value:
+- Present: n=44601
+  - percentiles (s): p1=-73.0, p5=-20.0, p25=-10.0, p50=-6.5, p75=-4.0, p95=-2.0, p99=11.0
+  - <=±15s: 91.7%, <=±30s: 97.3%, <=±60s: 98.6%
+- Absent: n=1304
+  - percentiles (s): p1=-58.0, p5=-26.4, p25=-11.0, p50=-1.0, p75=11.0, p95=56.8, p99=403.6
+  - <=±15s: 63.8%, <=±30s: 86.4%, <=±60s: 94.6%
+By Check 1 status:
+- Zero changes after t_cross: n=13176
+  - percentiles (s): p1=-105.0, p5=-20.0, p25=-7.0, p50=-5.0, p75=-3.0, p95=-1.0, p99=10.0
+  - <=±15s: 92.9%, <=±30s: 96.6%, <=±60s: 97.8%
+- Changed after t_cross: n=32397
+  - percentiles (s): p1=-48.0, p5=-20.0, p25=-10.5, p50=-7.5, p75=-4.5, p95=-2.0, p99=14.5
+  - <=±15s: 90.6%, <=±30s: 97.4%, <=±60s: 98.9%
+
+## V4: classification agreement
+
+Among 47281 events with both a held-value and a VP-based classification (R=50m):
+- 3x3 matrix (held_class, vp_class): counts
+  - (early, early): 3751
+  - (early, late): 107
+  - (early, on_time): 751
+  - (late, early): 60
+  - (late, late): 14145
+  - (late, on_time): 98
+  - (on_time, early): 83
+  - (on_time, late): 886
+  - (on_time, on_time): 27400
+
+On-time share by source and threshold:
+- +180s: held 28369 / 47281 (60.0%), vp 28249 / 47281 (59.7%)
+- +60s: held 14467 / 47281 (30.6%), vp 13855 / 47281 (29.3%)
+- +300s: held 35814 / 47281 (75.7%), vp 35988 / 47281 (76.1%)
+
+## Observations
+
+- Drift (held value minus value at t_cross) median is 13.0s overall, tight relative to the ~600s gap between predicted time and drop time found in observed_time's report - the value itself settles quickly even though the feed is slow to remove the entry.
+- Arrival uncertainty, when present, is always exactly 0 in this sample - never non-zero.
+- Departure uncertainty, when present, is always exactly 0 in this sample - never non-zero.
+- Only 28.1% of raw VehiclePosition entities carry a trip_id (4128137 / 14677481 (28.1%)); start_date is never populated. Matching used trip_id plus a scheduled-time window instead of (trip_id, start_date), confirmed with Marcus before proceeding.
+- Held-value-vs-VP offset is far tighter at intermediate stops (median -6.0s) than at first stops (median -17.0s) or final stops (median 4.0s, with a long tail).
+- Held-value and VP-based punctuality classification agree on 45296 / 47281 (95.8%) of events (3-way early/on_time/late).

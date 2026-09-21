@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4541
 - First snapshot: 2026-09-05T21:59:43+00:00 UTC / 2026-09-05T23:59:43+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-06T21:35:21+00:00 UTC / 2026-09-06T23:35:21+02:00 Europe/Stockholm
-- Git commit: dc235ec07a580b04282f248e632d952ba9f75e89
-- Run timestamp (UTC): 2026-09-21T09:37:00Z
+- Git commit: e3c5f50c19ff17e69f09d6c5a1175daa1c8a2ab5
+- Run timestamp (UTC): 2026-09-21T09:46:44Z
 
 ## 1. Snapshot cadence
 

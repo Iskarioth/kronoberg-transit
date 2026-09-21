@@ -8,15 +8,17 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from validate_observed_time import (
+from koda_scan_lib import (
     STAGING_SCHEMA,
     classify_leaving,
     collect_drop_events,
     predicted_arrival,
     predicted_departure,
+    setup_duckdb,
+)
+from validate_observed_time import (
     section_cadence,
     section_retained_stale,
-    setup_duckdb,
 )
 
 # --------------------------------------------------------------------------
