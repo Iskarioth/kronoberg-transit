@@ -1,0 +1,40 @@
+name: smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Service date to check (YYYY-MM-DD); defaults to ~14 days ago"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Write Google service account file
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/sa.json"
+
+      - name: KoDa check
+        env:
+          TRAFIKLAB_KODA_KEY: ${{ secrets.TRAFIKLAB_KODA_KEY }}
+        run: uv run python scripts/koda_check.py ${{ inputs.date }}
+
+      - name: Sheet ping
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/sa.json
+          GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+        run: uv run python scripts/setup_sheet.py --ping --run-type smoke-ci
