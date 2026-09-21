@@ -278,6 +278,11 @@ unobserved. They are never labelled cancelled.
 - The route-day output needs this count and share. `docs/data_dictionary.md` is updated
   when the aggregation is built.
 
+**Addendum (2026-09-21):** The missing trips are not explained by where the archives
+end. Of the 122 missing trips on 2026-09-07, 121 were scheduled to start between that
+day's first and last snapshot; on 2026-09-06, 26 of 28 were. The remaining 1 and 2 were
+scheduled to start after that day's last snapshot.
+
 ---
 
 ## D-011 · 2026-09-21 · Matching realtime trips to the schedule by service date
