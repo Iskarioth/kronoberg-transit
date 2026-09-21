@@ -30,8 +30,8 @@ import urllib.error
 import urllib.request
 
 BASE = "https://api.koda.trafiklab.se/KoDa/api/v2"
-OPERATOR = "krono"          # Länstrafiken Kronoberg
-FEED = "TripUpdates"        # ServiceAlerts | TripUpdates | VehiclePositions
+OPERATOR = "krono"  # Länstrafiken Kronoberg
+FEED = "TripUpdates"  # ServiceAlerts | TripUpdates | VehiclePositions
 SEVEN_ZIP_MAGIC = b"\x37\x7a\xbc\xaf\x27\x1c"
 POLL_SECONDS = 30
 MAX_WAIT_MINUTES = 20
@@ -81,7 +81,7 @@ def describe_archive(path):
         print(f"  Archive contains {len(names)} entries. First few:")
         for name in names[:5]:
             print(f"    {name}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - archive parsing, boundary with external data
         print(f"  Could not read archive: {e}")
 
 
@@ -93,7 +93,7 @@ def main():
     if len(sys.argv) > 1:
         date = sys.argv[1]
     else:
-        date = (dt.date.today() - dt.timedelta(days=14)).isoformat()
+        date = (dt.datetime.now(tz=dt.UTC).date() - dt.timedelta(days=14)).isoformat()
     hour = int(sys.argv[2]) if len(sys.argv) > 2 else 8
 
     url = build_url(OPERATOR, FEED, date, hour, key)
