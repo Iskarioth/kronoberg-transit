@@ -246,3 +246,34 @@ observed, unobserved.
   simplicity.
 - The route-day output needs a skipped-stop count and rate. `docs/data_dictionary.md` is
   updated when the aggregation is built.
+
+---
+
+## D-010 · 2026-09-21 · Trips with no realtime data are reported, never assumed cancelled
+
+**Decision:** Scheduled trips that never appear in TripUpdates for their service date
+are reported per route and day as trips with no realtime data, as a count and as a
+share of scheduled trips, next to the cancellation rate. Their stop events are
+unobserved. They are never labelled cancelled.
+
+**Reason:**
+
+- Far more trips are missing than flagged. On 2026-09-07, 122 of 2,162 scheduled trips
+  (5.6%) never appeared, while 2 were marked `CANCELED`. On 2026-09-06, 28 of 729 (3.8%)
+  never appeared and none were marked.
+- The feed alone cannot say why a trip is missing: it may not have run, or it may have
+  run without its data reaching the feed. Calling missing trips cancelled would
+  overstate cancellations. Leaving them out would make a cancellation rate built only
+  on `CANCELED` look cleaner than the service was.
+- Some missing trips may run late in the evening or after midnight, where their data
+  would sit in the next date's archives, which the validation scans did not read (see
+  D-011).
+
+**Consequences:**
+
+- Coverage already falls when trips are missing, since their stop events are
+  unobserved. This count shows how much of that gap is whole trips.
+- The count is read alongside data_quality. During a gap in the snapshots, trips can be
+  missing because the feed was, not because the service was.
+- The route-day output needs this count and share. `docs/data_dictionary.md` is updated
+  when the aggregation is built.
