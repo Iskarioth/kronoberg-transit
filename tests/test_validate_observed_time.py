@@ -10,7 +10,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from koda_scan_lib import (
-    STAGING_SCHEMA,
     assert_unique_rows,
     classify_leaving,
     collect_drop_events,
@@ -25,6 +24,8 @@ from validate_observed_time import (
     section_cadence,
     section_retained_stale,
 )
+
+from kronoberg_transit.gtfs_rt import STAGING_SCHEMA
 
 # --------------------------------------------------------------------------
 # Stop drops: collect_drop_events over plain Python timeline structures

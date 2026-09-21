@@ -18,7 +18,7 @@ import os
 import sys
 import tempfile
 from bisect import bisect_left
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
@@ -30,7 +30,6 @@ from koda_scan_lib import (
     INTERIM_DIR,
     OPERATOR,
     REPORT_DIR,
-    STOCKHOLM,
     VP_FEED,
     VP_INTERIM_DIR,
     fmt_pct_list,
@@ -44,25 +43,7 @@ from koda_scan_lib import (
     stage_date_vp,
 )
 
-
-def scheduled_time_utc(svc_date: date, hms: str) -> int | None:
-    """GTFS spec rule for a HH:MM:SS service-day time -> UTC unix timestamp:
-    noon Europe/Stockholm on the service date, minus 12h, plus HH:MM:SS. This
-    anchors on an always-unambiguous local time (noon) before doing the rest
-    of the arithmetic in UTC, so it handles times past 24:00 and DST changes
-    correctly even when HH:MM:SS itself would name an ambiguous or
-    non-existent local wall-clock time.
-    """
-    if not hms:
-        return None
-    parts = hms.split(":")
-    if len(parts) != 3:
-        return None
-    h, m, s = (int(p) for p in parts)
-    noon_local = datetime(svc_date.year, svc_date.month, svc_date.day, 12, 0, 0, tzinfo=STOCKHOLM)
-    anchor_utc = noon_local.astimezone(UTC) - timedelta(hours=12)
-    result = anchor_utc + timedelta(hours=h, minutes=m, seconds=s)
-    return int(result.timestamp())
+from kronoberg_transit.time_utils import scheduled_time_utc
 
 
 def assert_unique(con: duckdb.DuckDBPyConnection, table: str, key_cols: list[str]) -> None:

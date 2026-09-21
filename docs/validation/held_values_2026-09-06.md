@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4541
 - First snapshot: 2026-09-05T21:59:43+00:00 UTC / 2026-09-05T23:59:43+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-06T21:35:21+00:00 UTC / 2026-09-06T23:35:21+02:00 Europe/Stockholm
-- Git commit: 59e2c149ad0c8d1a932fc51779d989e40c21c28e
-- Run timestamp (UTC): 2026-09-21T14:31:44Z
+- Git commit: a883f1b58853236833a8a10fd8e0b5cca6dd8015
+- Run timestamp (UTC): 2026-09-21T18:16:47Z
 
 ## Exclusions
 
@@ -40,13 +40,13 @@ By whether uncertainty is present on the held value:
 ## Check 2: uncertainty
 
 **Arrival** (n=1847445):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('absent', '0-60s_future', 65917), ('absent', '>60s_future', 1235622), ('absent', '0-60s_past', 21519), ('absent', '>60s_past', 1050), ('present_zero', '0-60s_past', 52117), ('present_zero', '>60s_past', 471220)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 471220), ('absent', '>60s_past', 1050), ('present_zero', '0-60s_past', 52117), ('absent', '0-60s_past', 21519), ('absent', '>60s_future', 1235622), ('absent', '0-60s_future', 65917)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 16673; appears then later disappears: 59
 - (now minus time) at first appearance of uncertainty (s), n=16732: p5=4.0, p25=9.0, p50=15.0, p75=21.0, p95=37.0
 
 **Departure** (n=1847445):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '0-60s_past', 53013), ('absent', '>60s_future', 1243472), ('present_zero', '>60s_past', 457728), ('absent', '>60s_past', 1094), ('absent', '0-60s_past', 24921), ('absent', '0-60s_future', 67217)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('absent', '>60s_past', 1094), ('absent', '0-60s_future', 67217), ('present_zero', '>60s_past', 457728), ('present_zero', '0-60s_past', 53013), ('absent', '0-60s_past', 24921), ('absent', '>60s_future', 1243472)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 16539; appears then later disappears: 59
 - (now minus time) at first appearance of uncertainty (s), n=16598: p5=6.0, p25=10.0, p50=15.0, p75=19.0, p95=28.0
@@ -132,6 +132,7 @@ By stop position and how the stop left the feed:
 - Difference (final minus before), seconds, n=2: p5=775.1, p25=775.8, p50=776.5, p75=777.2, p95=777.9
 - Marker status, before the first drop -> final appearance (count):
   - absent -> present: 2
+
 
 ## V1-V4: VehiclePositions
 

@@ -26,26 +26,24 @@ import gzip
 import io
 import os
 import sys
-import tempfile
-import time
 import urllib.error
 import urllib.request
-import zipfile
 import zlib
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from google.transit import gtfs_realtime_pb2
 
+from kronoberg_transit.static_schedule import (
+    OPERATOR,
+    SEVEN_ZIP_MAGIC,
+    STATIC_DIR,
+    ZIP_MAGIC,
+    extract_gtfs_text_files,
+    fetch_koda_static,
+)
+
 REALTIME_URL = "https://opendata.samtrafiken.se/gtfs-rt/krono/TripUpdates.pb"
-KODA_STATIC_URL = "https://api.koda.trafiklab.se/KoDa/api/v2/gtfs-static/krono"
-OPERATOR = "krono"
-ZIP_MAGIC = b"PK\x03\x04"
-SEVEN_ZIP_MAGIC = b"\x37\x7a\xbc\xaf\x27\x1c"
-POLL_SECONDS = 30
-MAX_WAIT_MINUTES = 20
 TIMEOUT = 120
-STATIC_DIR = Path("data/static")
 
 
 def redact(url: str, key: str) -> str:
@@ -95,55 +93,6 @@ def check_realtime(key: str) -> int:
 
     print("\nVERDICT (realtime): OK.")
     return 0
-
-
-def fetch_koda_static(date: str, key: str) -> bytes:
-    url = f"{KODA_STATIC_URL}?date={date}&key={key}"
-    print(f"Requesting KoDa historical static for {OPERATOR} on {date}")
-    print(f"  {redact(url, key)}")
-
-    req = urllib.request.Request(url, headers={"User-Agent": "smoke-trafiklab/1.0"})
-    started = time.time()
-    deadline = started + MAX_WAIT_MINUTES * 60
-
-    while True:
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                return resp.read()
-        except urllib.error.HTTPError as e:
-            if e.code == 202:
-                waited = int(time.time() - started)
-                print(f"  HTTP 202 - archive is being built (waited {waited}s)")
-                if time.time() + POLL_SECONDS > deadline:
-                    raise RuntimeError(
-                        f"KoDa static archive still building after {MAX_WAIT_MINUTES} min"
-                    )
-                time.sleep(POLL_SECONDS)
-                continue
-            detail = e.read()[:300].decode("utf-8", "replace").strip()
-            raise RuntimeError(f"HTTP {e.code} {e.reason}: {detail}")
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"Connection failed: {e.reason}")
-
-
-def extract_gtfs_text_files(body: bytes, names: list[str]) -> dict[str, str]:
-    """Extract named text files from a zip or 7z GTFS static archive."""
-    out: dict[str, str] = {}
-    if body[:4] == ZIP_MAGIC:
-        with zipfile.ZipFile(io.BytesIO(body)) as zf:
-            for name in names:
-                out[name] = zf.read(name).decode("utf-8-sig")
-    elif body[:6] == SEVEN_ZIP_MAGIC:
-        import py7zr
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with py7zr.SevenZipFile(io.BytesIO(body), mode="r") as archive:
-                archive.extract(path=tmpdir, targets=names)
-            for name in names:
-                out[name] = (Path(tmpdir) / name).read_text(encoding="utf-8-sig")
-    else:
-        raise RuntimeError(f"Unrecognized archive format (first bytes: {body[:8]!r})")
-    return out
 
 
 def check_historical_static(date: str, key: str) -> int:
