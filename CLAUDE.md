@@ -81,7 +81,7 @@ uv run --env-file .env python scripts/<script>.py
 
 ## Code conventions
 
-- Transformations are DuckDB SQL in `src/sql/`. Python handles IO and orchestration.
+- Transformations are DuckDB SQL in `src/kronoberg_transit/sql/`. Python handles IO and orchestration.
 - Type hints on all functions. `ruff` for lint and format.
 - Store timestamps in UTC. Convert to `Europe/Stockholm` only when assigning service
   days or producing reports.
