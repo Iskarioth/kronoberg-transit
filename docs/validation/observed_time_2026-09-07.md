@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4143
 - First snapshot: 2026-09-07T02:39:03+00:00 UTC / 2026-09-07T04:39:03+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-07T21:59:39+00:00 UTC / 2026-09-07T23:59:39+02:00 Europe/Stockholm
-- Git commit: 4f39032f171865b76a26db9e44f332af5fbb49eb
-- Run timestamp (UTC): 2026-09-21T09:14:11Z
+- Git commit: dc235ec07a580b04282f248e632d952ba9f75e89
+- Run timestamp (UTC): 2026-09-21T09:36:00Z
 
 ## 1. Snapshot cadence
 
@@ -21,27 +21,47 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Gaps > 60s: 0 / 4142 (0.0%)
 - Gaps > 300s: 0 / 4142 (0.0%)
 - Duplicate snapshot files (same header_timestamp as another file): 716
-- 20 largest gaps (header_timestamp, gap_s):
-  - 2026-09-07T20:59:06+00:00 UTC / 2026-09-07T22:59:06+02:00 Europe/Stockholm: 39s
-  - 2026-09-07T16:15:10+00:00 UTC / 2026-09-07T18:15:10+02:00 Europe/Stockholm: 36s
-  - 2026-09-07T18:49:04+00:00 UTC / 2026-09-07T20:49:04+02:00 Europe/Stockholm: 35s
-  - 2026-09-07T16:47:01+00:00 UTC / 2026-09-07T18:47:01+02:00 Europe/Stockholm: 35s
-  - 2026-09-07T15:54:05+00:00 UTC / 2026-09-07T17:54:05+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T20:24:03+00:00 UTC / 2026-09-07T22:24:03+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T21:16:07+00:00 UTC / 2026-09-07T23:16:07+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T16:50:03+00:00 UTC / 2026-09-07T18:50:03+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T21:48:09+00:00 UTC / 2026-09-07T23:48:09+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T21:26:29+00:00 UTC / 2026-09-07T23:26:29+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T16:05:37+00:00 UTC / 2026-09-07T18:05:37+02:00 Europe/Stockholm: 34s
-  - 2026-09-07T07:38:33+00:00 UTC / 2026-09-07T09:38:33+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T09:11:03+00:00 UTC / 2026-09-07T11:11:03+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T13:02:07+00:00 UTC / 2026-09-07T15:02:07+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T08:01:55+00:00 UTC / 2026-09-07T10:01:55+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T16:12:10+00:00 UTC / 2026-09-07T18:12:10+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T11:11:50+00:00 UTC / 2026-09-07T13:11:50+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T18:46:54+00:00 UTC / 2026-09-07T20:46:54+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T07:47:03+00:00 UTC / 2026-09-07T09:47:03+02:00 Europe/Stockholm: 33s
-  - 2026-09-07T16:41:06+00:00 UTC / 2026-09-07T18:41:06+02:00 Europe/Stockholm: 33s
+- 20 largest gaps (start -> end, gap_s):
+  - start 2026-09-07T20:58:27+00:00 UTC / 2026-09-07T22:58:27+02:00 Europe/Stockholm
+    end   2026-09-07T20:59:06+00:00 UTC / 2026-09-07T22:59:06+02:00 Europe/Stockholm: 39s
+  - start 2026-09-07T16:14:34+00:00 UTC / 2026-09-07T18:14:34+02:00 Europe/Stockholm
+    end   2026-09-07T16:15:10+00:00 UTC / 2026-09-07T18:15:10+02:00 Europe/Stockholm: 36s
+  - start 2026-09-07T16:46:26+00:00 UTC / 2026-09-07T18:46:26+02:00 Europe/Stockholm
+    end   2026-09-07T16:47:01+00:00 UTC / 2026-09-07T18:47:01+02:00 Europe/Stockholm: 35s
+  - start 2026-09-07T18:48:29+00:00 UTC / 2026-09-07T20:48:29+02:00 Europe/Stockholm
+    end   2026-09-07T18:49:04+00:00 UTC / 2026-09-07T20:49:04+02:00 Europe/Stockholm: 35s
+  - start 2026-09-07T15:53:31+00:00 UTC / 2026-09-07T17:53:31+02:00 Europe/Stockholm
+    end   2026-09-07T15:54:05+00:00 UTC / 2026-09-07T17:54:05+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T16:05:03+00:00 UTC / 2026-09-07T18:05:03+02:00 Europe/Stockholm
+    end   2026-09-07T16:05:37+00:00 UTC / 2026-09-07T18:05:37+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T16:49:29+00:00 UTC / 2026-09-07T18:49:29+02:00 Europe/Stockholm
+    end   2026-09-07T16:50:03+00:00 UTC / 2026-09-07T18:50:03+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T20:23:29+00:00 UTC / 2026-09-07T22:23:29+02:00 Europe/Stockholm
+    end   2026-09-07T20:24:03+00:00 UTC / 2026-09-07T22:24:03+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T21:15:33+00:00 UTC / 2026-09-07T23:15:33+02:00 Europe/Stockholm
+    end   2026-09-07T21:16:07+00:00 UTC / 2026-09-07T23:16:07+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T21:25:55+00:00 UTC / 2026-09-07T23:25:55+02:00 Europe/Stockholm
+    end   2026-09-07T21:26:29+00:00 UTC / 2026-09-07T23:26:29+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T21:47:35+00:00 UTC / 2026-09-07T23:47:35+02:00 Europe/Stockholm
+    end   2026-09-07T21:48:09+00:00 UTC / 2026-09-07T23:48:09+02:00 Europe/Stockholm: 34s
+  - start 2026-09-07T07:38:00+00:00 UTC / 2026-09-07T09:38:00+02:00 Europe/Stockholm
+    end   2026-09-07T07:38:33+00:00 UTC / 2026-09-07T09:38:33+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T07:46:30+00:00 UTC / 2026-09-07T09:46:30+02:00 Europe/Stockholm
+    end   2026-09-07T07:47:03+00:00 UTC / 2026-09-07T09:47:03+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T08:01:22+00:00 UTC / 2026-09-07T10:01:22+02:00 Europe/Stockholm
+    end   2026-09-07T08:01:55+00:00 UTC / 2026-09-07T10:01:55+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T09:10:30+00:00 UTC / 2026-09-07T11:10:30+02:00 Europe/Stockholm
+    end   2026-09-07T09:11:03+00:00 UTC / 2026-09-07T11:11:03+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T11:11:17+00:00 UTC / 2026-09-07T13:11:17+02:00 Europe/Stockholm
+    end   2026-09-07T11:11:50+00:00 UTC / 2026-09-07T13:11:50+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T13:01:34+00:00 UTC / 2026-09-07T15:01:34+02:00 Europe/Stockholm
+    end   2026-09-07T13:02:07+00:00 UTC / 2026-09-07T15:02:07+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T16:11:37+00:00 UTC / 2026-09-07T18:11:37+02:00 Europe/Stockholm
+    end   2026-09-07T16:12:10+00:00 UTC / 2026-09-07T18:12:10+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T16:40:33+00:00 UTC / 2026-09-07T18:40:33+02:00 Europe/Stockholm
+    end   2026-09-07T16:41:06+00:00 UTC / 2026-09-07T18:41:06+02:00 Europe/Stockholm: 33s
+  - start 2026-09-07T17:38:38+00:00 UTC / 2026-09-07T19:38:38+02:00 Europe/Stockholm
+    end   2026-09-07T17:39:11+00:00 UTC / 2026-09-07T19:39:11+02:00 Europe/Stockholm: 33s
 
 ## 2. Field population
 

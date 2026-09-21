@@ -401,8 +401,10 @@ def section_cadence(con: duckdb.DuckDBPyConnection) -> dict:
         "SELECT (SELECT COUNT(*) FROM all_snapshot_files) - (SELECT COUNT(DISTINCT header_timestamp) FROM all_snapshot_files)"
     ).fetchone()[0]
     top_gaps = con.execute(
-        "SELECT header_timestamp, header_timestamp - LAG(header_timestamp) OVER (ORDER BY header_timestamp) AS gap "
-        "FROM snapshots QUALIFY gap IS NOT NULL ORDER BY gap DESC LIMIT 20"
+        "SELECT LAG(header_timestamp) OVER (ORDER BY header_timestamp) AS gap_start, "
+        "header_timestamp AS gap_end, "
+        "header_timestamp - LAG(header_timestamp) OVER (ORDER BY header_timestamp) AS gap "
+        "FROM snapshots QUALIFY gap IS NOT NULL ORDER BY gap DESC, gap_end ASC LIMIT 20"
     ).fetchall()
     return {
         "n_gaps": len(gaps),
@@ -978,9 +980,10 @@ def render_report(ctx: dict) -> str:
     lines.append(
         f"- Duplicate snapshot files (same header_timestamp as another file): {c['duplicate_snapshot_count']}"
     )
-    lines.append("- 20 largest gaps (header_timestamp, gap_s):")
-    for ts, gap in c["top_gaps"]:
-        lines.append(f"  - {fmt_ts_both(ts)}: {gap}s")
+    lines.append("- 20 largest gaps (start -> end, gap_s):")
+    for gap_start, gap_end, gap in c["top_gaps"]:
+        lines.append(f"  - start {fmt_ts_both(gap_start)}")
+        lines.append(f"    end   {fmt_ts_both(gap_end)}: {gap}s")
     lines.append("")
 
     # Section 2

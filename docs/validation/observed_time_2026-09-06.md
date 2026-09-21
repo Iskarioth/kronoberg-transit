@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4541
 - First snapshot: 2026-09-05T21:59:43+00:00 UTC / 2026-09-05T23:59:43+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-06T21:35:21+00:00 UTC / 2026-09-06T23:35:21+02:00 Europe/Stockholm
-- Git commit: 4f39032f171865b76a26db9e44f332af5fbb49eb
-- Run timestamp (UTC): 2026-09-21T09:18:17Z
+- Git commit: dc235ec07a580b04282f248e632d952ba9f75e89
+- Run timestamp (UTC): 2026-09-21T09:37:00Z
 
 ## 1. Snapshot cadence
 
@@ -21,27 +21,47 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Gaps > 60s: 1 / 4540 (0.0%)
 - Gaps > 300s: 1 / 4540 (0.0%)
 - Duplicate snapshot files (same header_timestamp as another file): 913
-- 20 largest gaps (header_timestamp, gap_s):
-  - 2026-09-06T03:29:23+00:00 UTC / 2026-09-06T05:29:23+02:00 Europe/Stockholm: 6876s
-  - 2026-09-06T16:01:27+00:00 UTC / 2026-09-06T18:01:27+02:00 Europe/Stockholm: 50s
-  - 2026-09-06T21:31:11+00:00 UTC / 2026-09-06T23:31:11+02:00 Europe/Stockholm: 47s
-  - 2026-09-05T22:39:11+00:00 UTC / 2026-09-06T00:39:11+02:00 Europe/Stockholm: 46s
-  - 2026-09-05T22:57:10+00:00 UTC / 2026-09-06T00:57:10+02:00 Europe/Stockholm: 45s
-  - 2026-09-05T22:18:09+00:00 UTC / 2026-09-06T00:18:09+02:00 Europe/Stockholm: 43s
-  - 2026-09-06T00:21:12+00:00 UTC / 2026-09-06T02:21:12+02:00 Europe/Stockholm: 38s
-  - 2026-09-05T22:46:08+00:00 UTC / 2026-09-06T00:46:08+02:00 Europe/Stockholm: 37s
-  - 2026-09-06T20:32:12+00:00 UTC / 2026-09-06T22:32:12+02:00 Europe/Stockholm: 36s
-  - 2026-09-06T20:04:08+00:00 UTC / 2026-09-06T22:04:08+02:00 Europe/Stockholm: 36s
-  - 2026-09-06T17:05:02+00:00 UTC / 2026-09-06T19:05:02+02:00 Europe/Stockholm: 35s
-  - 2026-09-06T19:38:17+00:00 UTC / 2026-09-06T21:38:17+02:00 Europe/Stockholm: 34s
-  - 2026-09-06T20:48:18+00:00 UTC / 2026-09-06T22:48:18+02:00 Europe/Stockholm: 34s
-  - 2026-09-06T15:44:59+00:00 UTC / 2026-09-06T17:44:59+02:00 Europe/Stockholm: 34s
-  - 2026-09-06T18:09:04+00:00 UTC / 2026-09-06T20:09:04+02:00 Europe/Stockholm: 34s
-  - 2026-09-06T04:08:07+00:00 UTC / 2026-09-06T06:08:07+02:00 Europe/Stockholm: 33s
-  - 2026-09-05T22:22:02+00:00 UTC / 2026-09-06T00:22:02+02:00 Europe/Stockholm: 33s
-  - 2026-09-06T20:25:02+00:00 UTC / 2026-09-06T22:25:02+02:00 Europe/Stockholm: 33s
-  - 2026-09-06T01:25:07+00:00 UTC / 2026-09-06T03:25:07+02:00 Europe/Stockholm: 33s
-  - 2026-09-06T09:51:06+00:00 UTC / 2026-09-06T11:51:06+02:00 Europe/Stockholm: 33s
+- 20 largest gaps (start -> end, gap_s):
+  - start 2026-09-06T01:34:47+00:00 UTC / 2026-09-06T03:34:47+02:00 Europe/Stockholm
+    end   2026-09-06T03:29:23+00:00 UTC / 2026-09-06T05:29:23+02:00 Europe/Stockholm: 6876s
+  - start 2026-09-06T16:00:37+00:00 UTC / 2026-09-06T18:00:37+02:00 Europe/Stockholm
+    end   2026-09-06T16:01:27+00:00 UTC / 2026-09-06T18:01:27+02:00 Europe/Stockholm: 50s
+  - start 2026-09-06T21:30:24+00:00 UTC / 2026-09-06T23:30:24+02:00 Europe/Stockholm
+    end   2026-09-06T21:31:11+00:00 UTC / 2026-09-06T23:31:11+02:00 Europe/Stockholm: 47s
+  - start 2026-09-05T22:38:25+00:00 UTC / 2026-09-06T00:38:25+02:00 Europe/Stockholm
+    end   2026-09-05T22:39:11+00:00 UTC / 2026-09-06T00:39:11+02:00 Europe/Stockholm: 46s
+  - start 2026-09-05T22:56:25+00:00 UTC / 2026-09-06T00:56:25+02:00 Europe/Stockholm
+    end   2026-09-05T22:57:10+00:00 UTC / 2026-09-06T00:57:10+02:00 Europe/Stockholm: 45s
+  - start 2026-09-05T22:17:26+00:00 UTC / 2026-09-06T00:17:26+02:00 Europe/Stockholm
+    end   2026-09-05T22:18:09+00:00 UTC / 2026-09-06T00:18:09+02:00 Europe/Stockholm: 43s
+  - start 2026-09-06T00:20:34+00:00 UTC / 2026-09-06T02:20:34+02:00 Europe/Stockholm
+    end   2026-09-06T00:21:12+00:00 UTC / 2026-09-06T02:21:12+02:00 Europe/Stockholm: 38s
+  - start 2026-09-05T22:45:31+00:00 UTC / 2026-09-06T00:45:31+02:00 Europe/Stockholm
+    end   2026-09-05T22:46:08+00:00 UTC / 2026-09-06T00:46:08+02:00 Europe/Stockholm: 37s
+  - start 2026-09-06T20:03:32+00:00 UTC / 2026-09-06T22:03:32+02:00 Europe/Stockholm
+    end   2026-09-06T20:04:08+00:00 UTC / 2026-09-06T22:04:08+02:00 Europe/Stockholm: 36s
+  - start 2026-09-06T20:31:36+00:00 UTC / 2026-09-06T22:31:36+02:00 Europe/Stockholm
+    end   2026-09-06T20:32:12+00:00 UTC / 2026-09-06T22:32:12+02:00 Europe/Stockholm: 36s
+  - start 2026-09-06T17:04:27+00:00 UTC / 2026-09-06T19:04:27+02:00 Europe/Stockholm
+    end   2026-09-06T17:05:02+00:00 UTC / 2026-09-06T19:05:02+02:00 Europe/Stockholm: 35s
+  - start 2026-09-06T15:44:25+00:00 UTC / 2026-09-06T17:44:25+02:00 Europe/Stockholm
+    end   2026-09-06T15:44:59+00:00 UTC / 2026-09-06T17:44:59+02:00 Europe/Stockholm: 34s
+  - start 2026-09-06T18:08:30+00:00 UTC / 2026-09-06T20:08:30+02:00 Europe/Stockholm
+    end   2026-09-06T18:09:04+00:00 UTC / 2026-09-06T20:09:04+02:00 Europe/Stockholm: 34s
+  - start 2026-09-06T19:37:43+00:00 UTC / 2026-09-06T21:37:43+02:00 Europe/Stockholm
+    end   2026-09-06T19:38:17+00:00 UTC / 2026-09-06T21:38:17+02:00 Europe/Stockholm: 34s
+  - start 2026-09-06T20:47:44+00:00 UTC / 2026-09-06T22:47:44+02:00 Europe/Stockholm
+    end   2026-09-06T20:48:18+00:00 UTC / 2026-09-06T22:48:18+02:00 Europe/Stockholm: 34s
+  - start 2026-09-05T22:21:29+00:00 UTC / 2026-09-06T00:21:29+02:00 Europe/Stockholm
+    end   2026-09-05T22:22:02+00:00 UTC / 2026-09-06T00:22:02+02:00 Europe/Stockholm: 33s
+  - start 2026-09-06T01:24:34+00:00 UTC / 2026-09-06T03:24:34+02:00 Europe/Stockholm
+    end   2026-09-06T01:25:07+00:00 UTC / 2026-09-06T03:25:07+02:00 Europe/Stockholm: 33s
+  - start 2026-09-06T04:07:34+00:00 UTC / 2026-09-06T06:07:34+02:00 Europe/Stockholm
+    end   2026-09-06T04:08:07+00:00 UTC / 2026-09-06T06:08:07+02:00 Europe/Stockholm: 33s
+  - start 2026-09-06T09:50:33+00:00 UTC / 2026-09-06T11:50:33+02:00 Europe/Stockholm
+    end   2026-09-06T09:51:06+00:00 UTC / 2026-09-06T11:51:06+02:00 Europe/Stockholm: 33s
+  - start 2026-09-06T11:10:55+00:00 UTC / 2026-09-06T13:10:55+02:00 Europe/Stockholm
+    end   2026-09-06T11:11:28+00:00 UTC / 2026-09-06T13:11:28+02:00 Europe/Stockholm: 33s
 
 ## 2. Field population
 
