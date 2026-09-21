@@ -5,12 +5,15 @@ from pathlib import Path
 
 import duckdb
 import pyarrow as pa
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from validate_held_values import (
     HAVERSINE_SQL,
+    assert_unique,
     build_held_value_summary,
+    build_vp_reconciliation,
     check2_cross_tab,
     check3,
     scheduled_time_utc,
@@ -477,3 +480,158 @@ def test_haversine_zero_distance_for_identical_points():
     (result,) = con.execute(f"SELECT {dist_expr}").fetchone()
 
     assert abs(result) < 1e-6
+
+
+# --------------------------------------------------------------------------
+# Looping trip: same stop_id visited at two stop_sequences must produce two
+# distinct stop events, not one merged event (the bug this commit fixes).
+# --------------------------------------------------------------------------
+
+
+def test_looping_trip_same_stop_id_two_sequences_produces_two_events():
+    con = duckdb.connect()
+    eligible = [
+        {
+            "trip_id": "TL",
+            "stop_id": "SLOOP",
+            "stop_sequence": 2,
+            "is_final_stop": False,
+            "sched_ref_time": 110,
+        },
+        {
+            "trip_id": "TL",
+            "stop_id": "SLOOP",
+            "stop_sequence": 9,
+            "is_final_stop": False,
+            "sched_ref_time": 500,
+        },
+    ]
+    # Both physical visits (near t=110 and near t=500) appear under both
+    # stop_sequence tags, mirroring the cross join in build_vp_stop_distance:
+    # every ping is tested against every eligible stop_sequence at that
+    # stop_id, since a looping route can revisit the same physical stop.
+    visit_a = [(100, 80), (110, 30), (120, 20), (130, 25), (140, 90)]
+    visit_b = [(490, 85), (500, 25), (510, 15), (520, 30), (530, 95)]
+    distances = [
+        {
+            "trip_id": "TL",
+            "stop_id": "SLOOP",
+            "stop_sequence": seq,
+            "is_final_stop": False,
+            "sched_ref_time": 110 if seq == 2 else 500,
+            "vehicle_timestamp": ts,
+            "distance_m": dist,
+        }
+        for seq in (2, 9)
+        for ts, dist in visit_a + visit_b
+    ]
+    _register_vp_tables(con, eligible, distances)
+
+    result = v2_passage_at_radius(con, 50)
+
+    assert result["n_eligible"] == 2
+    assert result["n_detected"] == 2
+    assert result["n_multi_visit"] == 2
+
+    chosen = con.execute(
+        "SELECT stop_sequence, visit_start FROM vp_chosen_visit WHERE rn = 1 ORDER BY stop_sequence"
+    ).fetchall()
+    assert chosen == [(2, 110), (9, 500)]
+
+
+# --------------------------------------------------------------------------
+# assert_unique: fails loudly on duplicated (trip, stop_sequence) keys
+# --------------------------------------------------------------------------
+
+
+def test_assert_unique_fires_on_duplicated_rows():
+    con = duckdb.connect()
+    tbl = pa.table({"trip_id": ["T1", "T1"], "stop_sequence": [1, 1]})
+    con.register("src", tbl)
+    con.execute("CREATE OR REPLACE TABLE dup_table AS SELECT * FROM src")
+    con.unregister("src")
+
+    with pytest.raises(AssertionError):
+        assert_unique(con, "dup_table", ["trip_id", "stop_sequence"])
+
+
+def test_assert_unique_passes_on_unique_rows():
+    con = duckdb.connect()
+    tbl = pa.table({"trip_id": ["T1", "T1"], "stop_sequence": [1, 2]})
+    con.register("src", tbl)
+    con.execute("CREATE OR REPLACE TABLE ok_table AS SELECT * FROM src")
+    con.unregister("src")
+
+    assert_unique(con, "ok_table", ["trip_id", "stop_sequence"])  # must not raise
+
+
+# --------------------------------------------------------------------------
+# VP reconciliation: stage counts must never increase
+# --------------------------------------------------------------------------
+
+
+def _register_reconciliation_tables(
+    con: duckdb.DuckDBPyConnection,
+    held_rows: list[tuple],
+    eligible_rows: list[tuple],
+    visit_rows: list[tuple],
+    v3_rows: list[tuple],
+) -> None:
+    for table, rows in (
+        ("held_value_check1", held_rows),
+        ("vp_eligible_stops", eligible_rows),
+        ("vp_visits", visit_rows),
+        ("v3_offsets", v3_rows),
+    ):
+        tbl = pa.table(
+            {
+                "trip_id": [r[0] for r in rows],
+                "stop_sequence": [r[1] for r in rows],
+            }
+        )
+        con.register("src", tbl)
+        con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM src")
+        con.unregister("src")
+
+
+def test_reconciliation_passes_when_each_stage_does_not_exceed_the_last():
+    con = duckdb.connect()
+    _register_reconciliation_tables(
+        con,
+        held_rows=[("T1", 1), ("T1", 2), ("T1", 3)],
+        eligible_rows=[("T1", 1), ("T1", 2)],
+        visit_rows=[("T1", 1), ("T1", 1)],  # two visit rows, one distinct event
+        v3_rows=[("T1", 1)],
+    )
+
+    result = build_vp_reconciliation(con, n_v4=1)
+
+    assert result == {"n_held_values": 3, "n_eligible": 2, "n_v2": 1, "n_v3": 1, "n_v4": 1}
+
+
+def test_reconciliation_fails_loudly_when_a_later_stage_exceeds_an_earlier_one():
+    con = duckdb.connect()
+    _register_reconciliation_tables(
+        con,
+        held_rows=[("T1", 1)],
+        eligible_rows=[("T1", 1), ("T1", 2)],  # more eligible events than held values
+        visit_rows=[("T1", 1)],
+        v3_rows=[("T1", 1)],
+    )
+
+    with pytest.raises(AssertionError):
+        build_vp_reconciliation(con, n_v4=1)
+
+
+def test_reconciliation_fails_loudly_when_v3_and_v4_counts_disagree():
+    con = duckdb.connect()
+    _register_reconciliation_tables(
+        con,
+        held_rows=[("T1", 1), ("T1", 2)],
+        eligible_rows=[("T1", 1), ("T1", 2)],
+        visit_rows=[("T1", 1), ("T1", 2)],
+        v3_rows=[("T1", 1), ("T1", 2)],
+    )
+
+    with pytest.raises(AssertionError):
+        build_vp_reconciliation(con, n_v4=1)

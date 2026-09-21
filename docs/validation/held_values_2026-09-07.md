@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4143
 - First snapshot: 2026-09-07T02:39:03+00:00 UTC / 2026-09-07T04:39:03+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-07T21:59:39+00:00 UTC / 2026-09-07T23:59:39+02:00 Europe/Stockholm
-- Git commit: e3c5f50c19ff17e69f09d6c5a1175daa1c8a2ab5
-- Run timestamp (UTC): 2026-09-21T11:11:42Z
+- Git commit: 7c426c8ded019b7bb7ed08845042423fa2b6d348
+- Run timestamp (UTC): 2026-09-21T12:08:33Z
 
 ## Exclusions
 
@@ -20,33 +20,33 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 
 ## Check 1: frozen or drifting
 
-Among 47071 (trip, stop) pairs with a held value:
-- Reach t_cross: 46591 / 47071 (99.0%)
-- Zero changes after t_cross: 13466 / 46591 (28.9%)
-- Drift (held value minus value at t_cross): n=46591
-  - percentiles (s): p1=-6.0, p5=0.0, p25=0.0, p50=13.0, p75=30.0, p95=72.0, p99=239.1
-  - <=±15s: 53.9%, <=±30s: 75.3%, <=±60s: 92.4%
-- t_last_change minus t_cross (s), n=46591: p5=0.0, p25=0.0, p50=16.0, p75=37.0, p95=86.0
-- held value minus t_last_change (s), n=47071: p5=-31.0, p25=-20.0, p50=-15.0, p75=-10.0, p95=16.0
+Among 46443 (trip, stop) pairs with a held value:
+- Reach t_cross: 45968 / 46443 (99.0%)
+- Zero changes after t_cross: 13559 / 45968 (29.5%)
+- Drift (held value minus value at t_cross): n=45968
+  - percentiles (s): p1=-3.0, p5=0.0, p25=0.0, p50=13.0, p75=30.0, p95=69.0, p99=158.0
+  - <=±15s: 54.4%, <=±30s: 76.1%, <=±60s: 93.4%
+- t_last_change minus t_cross (s), n=45968: p5=0.0, p25=0.0, p50=16.0, p75=35.0, p95=80.0
+- held value minus t_last_change (s), n=46443: p5=-29.0, p25=-20.0, p50=-15.0, p75=-10.0, p95=13.0
 
 By how the stop left:
-- Mid-route drop: n=31159, reach t_cross=31114 / 31159 (99.9%), drift median=13.0s
-- Trip removal: n=15912, reach t_cross=15477 / 15912 (97.3%), drift median=12.0s
+- Mid-route drop: n=30890, reach t_cross=30845 / 30890 (99.9%), drift median=13.0s
+- Trip removal: n=15553, reach t_cross=15123 / 15553 (97.2%), drift median=12.0s
 
 By whether uncertainty is present on the held value:
-- Present: n=45211, drift median=13.0s, drift p95=69.0s
-- Absent: n=1860, drift median=0.0s, drift p95=1083.6999999999985s
+- Present: n=44790, drift median=13.0s, drift p95=69.0s
+- Absent: n=1653, drift median=0.0s, drift p95=49.29999999999973s
 
 ## Check 2: uncertainty
 
 **Arrival** (n=5067528):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 1264226), ('absent', '0-60s_future', 180510), ('present_zero', '0-60s_past', 136904), ('absent', '0-60s_past', 62360), ('absent', '>60s_past', 6589), ('absent', '>60s_future', 3416939)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 1264226), ('present_zero', '0-60s_past', 136904), ('absent', '>60s_past', 6589), ('absent', '0-60s_future', 180510), ('absent', '0-60s_past', 62360), ('absent', '>60s_future', 3416939)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 44748; appears then later disappears: 146
 - (now minus time) at first appearance of uncertainty (s), n=44895: p5=4.0, p25=9.0, p50=15.0, p75=22.0, p95=39.0
 
 **Departure** (n=5067524):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '0-60s_past', 139927), ('absent', '0-60s_past', 73393), ('present_zero', '>60s_past', 1228846), ('absent', '0-60s_future', 183406), ('absent', '>60s_past', 6723), ('absent', '>60s_future', 3435229)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('absent', '0-60s_past', 73393), ('absent', '>60s_past', 6723), ('absent', '>60s_future', 3435229), ('present_zero', '>60s_past', 1228846), ('present_zero', '0-60s_past', 139927), ('absent', '0-60s_future', 183406)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 44363; appears then later disappears: 146
 - (now minus time) at first appearance of uncertainty (s), n=44510: p5=6.0, p25=11.0, p50=15.0, p75=20.0, p95=30.0
@@ -66,6 +66,7 @@ Among 2034 trip removals:
 - Exactly 0: 5067528 / 5067528 (100.0%)
 - Within ±60s: 5067528 / 5067528 (100.0%)
 - Percentiles (s): p1=0.0, p5=0.0, p25=0.0, p50=0.0, p75=0.0, p95=0.0, p99=0.0
+
 **Departure** ((time - delay) minus scheduled time in UTC, n=5067524):
 - Exactly 0: 5067524 / 5067524 (100.0%)
 - Within ±60s: 5067524 / 5067524 (100.0%)
@@ -104,6 +105,27 @@ Among 2034 trip removals:
 - Total leave-and-return events: 45
 - Absence duration percentiles (s), n=45: p5=31.0, p25=32.0, p50=33.0, p75=48.0, p95=80.6
 - Stops dropped while absent, percentiles, n=45: p5=0.0, p25=0.0, p50=0.0, p75=0.0, p95=1.0
+
+## Check 6: held values without the marker
+
+Held values without `uncertainty = 0`: 1653 / 46443 (3.6%)
+
+By stop position and how the stop left the feed:
+- first, clean drop: 19 / 1653 (1.1%)
+- first, trip removal: 1 / 1653 (0.1%)
+- intermediate, clean drop: 151 / 1653 (9.1%)
+- intermediate, trip removal: 76 / 1653 (4.6%)
+- final, clean drop: 1 / 1653 (0.1%)
+- final, trip removal: 1405 / 1653 (85.0%)
+
+## VehiclePositions reconciliation (R = 50m)
+
+Funnel from held values to V4 events; no stage exceeds the one before it, and V3 and V4 counts must match:
+- Held values: 46443
+- Eligible stop events: 46443
+- Detected in V2: 45950
+- V3 events: 45940
+- V4 events: 45940
 
 ## V1: field population
 
@@ -155,99 +177,162 @@ Among 14677481 raw VehiclePosition entities:
 - Ping time span / scheduled trip duration ratio, n=2036: p5=0.8, p25=0.9, p50=1.0, p75=1.1, p95=1.2
 
 **Assignment dropouts** (trip-less pings from a vehicle, inside one of its trips' scheduled window):
-- Dropout pings: 1318031
-- Trips with at least one dropout ping: 1995
-- Dropout share per trip, n=2036: p25=0.2, p50=0.4, p75=0.5, p95=0.7
+- Dropout pings: 73111
+- Trips with at least one dropout ping: 1091
+- Dropout share per trip, n=2036: p25=0.0, p50=0.0, p75=0.1, p95=0.2
 
 **Guardrail check (run before proceeding):** median inter-ping interval = 2.0s (stop threshold: >60s); share of trip-linked pings outside the scheduled window = 0.00% (stop threshold: >10%). Neither triggered.
 
 ## V2: passage detection
 
 **R = 25m:**
-- Events detected: 44770 / 47071 (95.1%)
-- No ping within R: 2301 / 47071 (4.9%)
-- Multiple visits: 1225 / 47071 (2.6%)
-- Departure window width (s), n=43866: p25=2.0, p50=2.0, p75=2.0, p95=3.0
-- Arrival window width (final stops only, s), n=1680: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Events detected: 44916 / 46443 (96.7%)
+- No ping within R: 1527 / 46443 (3.3%)
+- Multiple visits: 1359 / 46443 (2.9%)
+- Departure window width (s), n=43930: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1782: p25=2.0, p50=2.0, p75=2.0, p95=3.0
 
 **R = 50m:**
-- Events detected: 45803 / 47071 (97.3%)
-- No ping within R: 1268 / 47071 (2.7%)
-- Multiple visits: 1001 / 47071 (2.1%)
-- Departure window width (s), n=44357: p25=2.0, p50=2.0, p75=2.0, p95=3.0
-- Arrival window width (final stops only, s), n=1799: p25=2.0, p50=2.0, p75=2.0, p95=4.0
+- Events detected: 45950 / 46443 (98.9%)
+- No ping within R: 493 / 46443 (1.1%)
+- Multiple visits: 1146 / 46443 (2.5%)
+- Departure window width (s), n=44415: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1902: p25=2.0, p50=2.0, p75=2.0, p95=4.0
 
 **R = 100m:**
-- Events detected: 46037 / 47071 (97.8%)
-- No ping within R: 1034 / 47071 (2.2%)
-- Multiple visits: 993 / 47071 (2.1%)
-- Departure window width (s), n=44206: p25=2.0, p50=2.0, p75=2.0, p95=3.0
-- Arrival window width (final stops only, s), n=1886: p25=2.0, p50=2.0, p75=2.0, p95=4.0
+- Events detected: 46184 / 46443 (99.4%)
+- No ping within R: 259 / 46443 (0.6%)
+- Multiple visits: 1136 / 46443 (2.4%)
+- Departure window width (s), n=44245: p25=2.0, p50=2.0, p75=2.0, p95=3.0
+- Arrival window width (final stops only, s), n=1994: p25=2.0, p50=2.0, p75=2.0, p95=4.0
 
 ## V3: held value vs VP
 
 **Compact table, R = 25m and R = 100m (overall offset only):**
-- R=25m: n=44878
-  - percentiles (s): p1=-60.0, p5=-11.0, p25=-6.0, p50=-4.0, p75=-2.0, p95=0.0, p99=19.5
-  - <=±15s: 95.8%, <=±30s: 97.8%, <=±60s: 98.6%
-- R=100m: n=46104
-  - percentiles (s): p1=-98.0, p5=-36.0, p25=-17.0, p50=-12.0, p75=-6.5, p95=-3.0, p99=31.0
-  - <=±15s: 67.1%, <=±30s: 91.7%, <=±60s: 97.5%
+- R=25m: n=44911
+  - percentiles (s): p1=-40.0, p5=-11.0, p25=-6.0, p50=-4.0, p75=-2.0, p95=0.0, p99=18.5
+  - <=±15s: 96.0%, <=±30s: 98.1%, <=±60s: 98.8%
+- R=100m: n=46173
+  - percentiles (s): p1=-84.6, p5=-35.0, p25=-17.0, p50=-12.0, p75=-6.5, p95=-3.0, p99=31.0
+  - <=±15s: 67.0%, <=±30s: 91.9%, <=±60s: 97.8%
 
 **R = 50m, full breakdown:**
-- Overall: n=45905
-  - percentiles (s): p1=-72.5, p5=-20.0, p25=-10.0, p50=-6.5, p75=-3.5, p95=-1.0, p99=19.0
-  - <=±15s: 90.9%, <=±30s: 96.9%, <=±60s: 98.5%
+- Overall: n=45940
+  - percentiles (s): p1=-55.5, p5=-20.0, p25=-10.0, p50=-6.5, p75=-3.5, p95=-1.0, p99=18.0
+  - <=±15s: 91.0%, <=±30s: 97.2%, <=±60s: 98.7%
 By how the stop left:
-- Mid-route drop: n=30610
-  - percentiles (s): p1=-90.0, p5=-22.0, p25=-10.0, p50=-7.0, p75=-3.0, p95=-2.0, p99=-1.0
-  - <=±15s: 90.6%, <=±30s: 96.8%, <=±60s: 98.3%
-- Trip removal: n=15295
-  - percentiles (s): p1=-41.0, p5=-17.0, p25=-9.0, p50=-6.0, p75=-4.0, p95=9.0, p99=36.0
-  - <=±15s: 91.3%, <=±30s: 97.2%, <=±60s: 98.9%
+- Mid-route drop: n=30606
+  - percentiles (s): p1=-66.5, p5=-21.0, p25=-10.0, p50=-7.0, p75=-3.0, p95=-2.0, p99=-1.0
+  - <=±15s: 90.8%, <=±30s: 97.1%, <=±60s: 98.6%
+- Trip removal: n=15334
+  - percentiles (s): p1=-39.0, p5=-17.0, p25=-9.0, p50=-6.0, p75=-4.0, p95=9.0, p99=32.8
+  - <=±15s: 91.3%, <=±30s: 97.4%, <=±60s: 99.0%
 By stop position:
-- first: n=1843
-  - percentiles (s): p1=-150.2, p5=-84.9, p25=-27.0, p50=-17.0, p75=-11.0, p95=-8.0, p99=-4.0
-  - <=±15s: 45.1%, <=±30s: 82.1%, <=±60s: 92.2%
-- intermediate: n=42095
-  - percentiles (s): p1=-41.0, p5=-16.0, p25=-9.5, p50=-6.0, p75=-4.0, p95=-2.0, p99=-1.0
-  - <=±15s: 94.1%, <=±30s: 98.1%, <=±60s: 99.0%
-- final: n=1967
-  - percentiles (s): p1=-1801.0, p5=-69.6, p25=-9.0, p50=4.0, p75=13.0, p95=47.0, p99=225.1
-  - <=±15s: 64.6%, <=±30s: 85.9%, <=±60s: 91.9%
+- first: n=1981
+  - percentiles (s): p1=-148.2, p5=-83.0, p25=-26.0, p50=-16.0, p75=-11.5, p95=-8.0, p99=-4.0
+  - <=±15s: 46.1%, <=±30s: 83.1%, <=±60s: 92.7%
+- intermediate: n=42057
+  - percentiles (s): p1=-40.0, p5=-16.0, p25=-9.5, p50=-6.0, p75=-4.0, p95=-2.0, p99=-1.0
+  - <=±15s: 94.2%, <=±30s: 98.2%, <=±60s: 99.1%
+- final: n=1902
+  - percentiles (s): p1=-40.0, p5=-23.0, p25=-7.0, p50=5.0, p75=13.0, p95=44.0, p99=92.0
+  - <=±15s: 67.6%, <=±30s: 90.6%, <=±60s: 96.8%
 By whether uncertainty is present on the held value:
-- Present: n=44601
-  - percentiles (s): p1=-73.0, p5=-20.0, p25=-10.0, p50=-6.5, p75=-4.0, p95=-2.0, p99=11.0
-  - <=±15s: 91.7%, <=±30s: 97.3%, <=±60s: 98.6%
-- Absent: n=1304
-  - percentiles (s): p1=-58.0, p5=-26.4, p25=-11.0, p50=-1.0, p75=11.0, p95=56.8, p99=403.6
-  - <=±15s: 63.8%, <=±30s: 86.4%, <=±60s: 94.6%
+- Present: n=44608
+  - percentiles (s): p1=-55.0, p5=-19.0, p25=-10.0, p50=-6.5, p75=-4.0, p95=-2.0, p99=11.0
+  - <=±15s: 91.8%, <=±30s: 97.5%, <=±60s: 98.8%
+- Absent: n=1332
+  - percentiles (s): p1=-57.7, p5=-28.0, p25=-12.0, p50=-1.5, p75=10.0, p95=53.2, p99=374.9
+  - <=±15s: 62.6%, <=±30s: 86.8%, <=±60s: 95.0%
 By Check 1 status:
-- Zero changes after t_cross: n=13176
-  - percentiles (s): p1=-105.0, p5=-20.0, p25=-7.0, p50=-5.0, p75=-3.0, p95=-1.0, p99=10.0
-  - <=±15s: 92.9%, <=±30s: 96.6%, <=±60s: 97.8%
-- Changed after t_cross: n=32397
-  - percentiles (s): p1=-48.0, p5=-20.0, p25=-10.5, p50=-7.5, p75=-4.5, p95=-2.0, p99=14.5
-  - <=±15s: 90.6%, <=±30s: 97.4%, <=±60s: 98.9%
+- Zero changes after t_cross: n=13268
+  - percentiles (s): p1=-105.0, p5=-21.0, p25=-7.0, p50=-5.0, p75=-3.0, p95=-1.0, p99=10.0
+  - <=±15s: 92.7%, <=±30s: 96.6%, <=±60s: 97.8%
+- Changed after t_cross: n=32335
+  - percentiles (s): p1=-39.0, p5=-19.5, p25=-10.5, p50=-7.5, p75=-4.5, p95=-2.0, p99=13.8
+  - <=±15s: 90.8%, <=±30s: 97.8%, <=±60s: 99.3%
 
 ## V4: classification agreement
 
-Among 47281 events with both a held-value and a VP-based classification (R=50m):
-- 3x3 matrix (held_class, vp_class): counts
-  - (early, early): 3751
-  - (early, late): 107
-  - (early, on_time): 751
-  - (late, early): 60
-  - (late, late): 14145
-  - (late, on_time): 98
-  - (on_time, early): 83
-  - (on_time, late): 886
-  - (on_time, on_time): 27400
+Among 45940 events with both a held-value and a VP-based classification (R=50m):
 
-On-time share by source and threshold:
-- +180s: held 28369 / 47281 (60.0%), vp 28249 / 47281 (59.7%)
-- +60s: held 14467 / 47281 (30.6%), vp 13855 / 47281 (29.3%)
-- +300s: held 35814 / 47281 (75.7%), vp 35988 / 47281 (76.1%)
+**By stop position:**
+
+**First** (n=1981):
+- 3x3 matrix (held_class, vp_class): counts
+  - (late, late): 192
+  - (on_time, late): 51
+  - (on_time, on_time): 1738
+- On-time share by source and threshold:
+  - +180s: held 1789 / 1981 (90.3%), vp 1738 / 1981 (87.7%)
+  - +60s: held 1477 / 1981 (74.6%), vp 1286 / 1981 (64.9%)
+  - +300s: held 1886 / 1981 (95.2%), vp 1863 / 1981 (94.0%)
+
+**Intermediate** (n=42057):
+- 3x3 matrix (held_class, vp_class): counts
+  - (early, early): 2927
+  - (early, late): 3
+  - (early, on_time): 398
+  - (late, early): 10
+  - (late, late): 13236
+  - (late, on_time): 39
+  - (on_time, early): 7
+  - (on_time, late): 605
+  - (on_time, on_time): 24832
+- On-time share by source and threshold:
+  - +180s: held 25444 / 42057 (60.5%), vp 25269 / 42057 (60.1%)
+  - +60s: held 12229 / 42057 (29.1%), vp 11625 / 42057 (27.6%)
+  - +300s: held 32573 / 42057 (77.4%), vp 32680 / 42057 (77.7%)
+
+**Final** (n=1902):
+- 3x3 matrix (held_class, vp_class): counts
+  - (early, early): 774
+  - (early, late): 1
+  - (early, on_time): 15
+  - (late, early): 5
+  - (late, late): 318
+  - (late, on_time): 16
+  - (on_time, early): 51
+  - (on_time, late): 8
+  - (on_time, on_time): 714
+- On-time share by source and threshold:
+  - +180s: held 773 / 1902 (40.6%), vp 745 / 1902 (39.2%)
+  - +60s: held 479 / 1902 (25.2%), vp 478 / 1902 (25.1%)
+  - +300s: held 929 / 1902 (48.8%), vp 899 / 1902 (47.3%)
+
+**By marker presence on the held value:**
+
+**All held values** (n=45940):
+- 3x3 matrix (held_class, vp_class): counts
+  - (early, early): 3701
+  - (early, late): 4
+  - (early, on_time): 413
+  - (late, early): 15
+  - (late, late): 13746
+  - (late, on_time): 55
+  - (on_time, early): 58
+  - (on_time, late): 664
+  - (on_time, on_time): 27284
+- On-time share by source and threshold:
+  - +180s: held 28006 / 45940 (61.0%), vp 27752 / 45940 (60.4%)
+  - +60s: held 14185 / 45940 (30.9%), vp 13389 / 45940 (29.1%)
+  - +300s: held 35388 / 45940 (77.0%), vp 35442 / 45940 (77.1%)
+
+**Marker present (uncertainty = 0)** (n=44608):
+- 3x3 matrix (held_class, vp_class): counts
+  - (early, early): 3151
+  - (early, late): 3
+  - (early, on_time): 398
+  - (late, early): 6
+  - (late, late): 13513
+  - (late, on_time): 45
+  - (on_time, early): 32
+  - (on_time, late): 651
+  - (on_time, on_time): 26809
+- On-time share by source and threshold:
+  - +180s: held 27492 / 44608 (61.6%), vp 27252 / 44608 (61.1%)
+  - +60s: held 13863 / 44608 (31.1%), vp 13064 / 44608 (29.3%)
+  - +300s: held 34772 / 44608 (78.0%), vp 34841 / 44608 (78.1%)
 
 ## Observations
 
@@ -255,5 +340,5 @@ On-time share by source and threshold:
 - Arrival uncertainty, when present, is always exactly 0 in this sample - never non-zero.
 - Departure uncertainty, when present, is always exactly 0 in this sample - never non-zero.
 - Only 28.1% of raw VehiclePosition entities carry a trip_id (4128137 / 14677481 (28.1%)); start_date is never populated. Matching used trip_id plus a scheduled-time window instead of (trip_id, start_date), confirmed with Marcus before proceeding.
-- Held-value-vs-VP offset is far tighter at intermediate stops (median -6.0s) than at first stops (median -17.0s) or final stops (median 4.0s, with a long tail).
-- Held-value and VP-based punctuality classification agree on 45296 / 47281 (95.8%) of events (3-way early/on_time/late).
+- Held-value-vs-VP offset is far tighter at intermediate stops (median -6.0s) than at first stops (median -16.0s) or final stops (median 5.0s, with a long tail).
+- Held-value and VP-based punctuality classification agree on 44731 / 45940 (97.4%) of events (3-way early/on_time/late).

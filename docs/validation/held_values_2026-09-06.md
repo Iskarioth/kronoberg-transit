@@ -10,8 +10,8 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 - Snapshot count (deduplicated): 4541
 - First snapshot: 2026-09-05T21:59:43+00:00 UTC / 2026-09-05T23:59:43+02:00 Europe/Stockholm
 - Last snapshot: 2026-09-06T21:35:21+00:00 UTC / 2026-09-06T23:35:21+02:00 Europe/Stockholm
-- Git commit: e3c5f50c19ff17e69f09d6c5a1175daa1c8a2ab5
-- Run timestamp (UTC): 2026-09-21T11:34:40Z
+- Git commit: 7c426c8ded019b7bb7ed08845042423fa2b6d348
+- Run timestamp (UTC): 2026-09-21T12:31:07Z
 
 ## Exclusions
 
@@ -20,33 +20,33 @@ Evidence for D-005/D-006 (see `docs/decisions.md`). This report never changes a 
 
 ## Check 1: frozen or drifting
 
-Among 17411 (trip, stop) pairs with a held value:
-- Reach t_cross: 17274 / 17411 (99.2%)
-- Zero changes after t_cross: 5085 / 17274 (29.4%)
-- Drift (held value minus value at t_cross): n=17274
-  - percentiles (s): p1=-6.0, p5=0.0, p25=0.0, p50=11.0, p75=26.0, p95=59.0, p99=175.0
-  - <=±15s: 57.2%, <=±30s: 79.2%, <=±60s: 94.5%
-- t_last_change minus t_cross (s), n=17274: p5=0.0, p25=0.0, p50=16.0, p75=32.0, p95=78.0
-- held value minus t_last_change (s), n=17411: p5=-29.0, p25=-19.0, p50=-14.0, p75=-10.0, p95=7.0
+Among 17183 (trip, stop) pairs with a held value:
+- Reach t_cross: 17059 / 17183 (99.3%)
+- Zero changes after t_cross: 5113 / 17059 (30.0%)
+- Drift (held value minus value at t_cross): n=17059
+  - percentiles (s): p1=-3.0, p5=0.0, p25=0.0, p50=11.0, p75=26.0, p95=57.0, p99=130.4
+  - <=±15s: 57.7%, <=±30s: 80.0%, <=±60s: 95.5%
+- t_last_change minus t_cross (s), n=17059: p5=0.0, p25=0.0, p50=16.0, p75=32.0, p95=67.0
+- held value minus t_last_change (s), n=17183: p5=-28.0, p25=-19.0, p50=-14.0, p75=-10.0, p95=3.0
 
 By how the stop left:
-- Mid-route drop: n=11048, reach t_cross=11048 / 11048 (100.0%), drift median=12.0s
-- Trip removal: n=6363, reach t_cross=6226 / 6363 (97.8%), drift median=10.0s
+- Mid-route drop: n=10969, reach t_cross=10969 / 10969 (100.0%), drift median=12.0s
+- Trip removal: n=6214, reach t_cross=6090 / 6214 (98.0%), drift median=10.0s
 
 By whether uncertainty is present on the held value:
-- Present: n=16839, drift median=11.0s, drift p95=58.0s
-- Absent: n=572, drift median=0.0s, drift p95=1261.8999999999999s
+- Present: n=16689, drift median=12.0s, drift p95=58.0s
+- Absent: n=494, drift median=0.0s, drift p95=41.0s
 
 ## Check 2: uncertainty
 
 **Arrival** (n=1847445):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 471220), ('absent', '0-60s_future', 65917), ('present_zero', '0-60s_past', 52117), ('absent', '>60s_future', 1235622), ('absent', '0-60s_past', 21519), ('absent', '>60s_past', 1050)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 471220), ('absent', '>60s_past', 1050), ('absent', '0-60s_past', 21519), ('absent', '0-60s_future', 65917), ('absent', '>60s_future', 1235622), ('present_zero', '0-60s_past', 52117)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 16673; appears then later disappears: 59
 - (now minus time) at first appearance of uncertainty (s), n=16732: p5=4.0, p25=9.0, p50=15.0, p75=21.0, p95=37.0
 
 **Departure** (n=1847445):
-- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 457728), ('absent', '>60s_future', 1243472), ('absent', '0-60s_past', 24921), ('absent', '0-60s_future', 67217), ('present_zero', '0-60s_past', 53013), ('absent', '>60s_past', 1094)]
+- Cross-tab (uncertainty bucket, time-relative-to-now bucket, count): [('present_zero', '>60s_past', 457728), ('absent', '>60s_future', 1243472), ('present_zero', '0-60s_past', 53013), ('absent', '0-60s_past', 24921), ('absent', '0-60s_future', 67217), ('absent', '>60s_past', 1094)]
 - Non-zero uncertainty values: none observed
 - Stops where uncertainty ever appears: 16539; appears then later disappears: 59
 - (now minus time) at first appearance of uncertainty (s), n=16598: p5=6.0, p25=10.0, p50=15.0, p75=19.0, p95=28.0
@@ -56,7 +56,7 @@ By whether uncertainty is present on the held value:
 Among 700 trip removals:
 - Completed (all remaining stops in the past): 557 / 700 (79.6%)
 - Left early (at least one remaining stop in the future): 143 / 700 (20.4%)
-- Future-stops-remaining percentiles for left-early trips (n=143): p25=1.0, p50=1.0, p75=1.0, p95=2.0
+- Future-stops-remaining percentiles for left-early trips (n=143): p25=1.0, p50=1.0, p75=1.0, p95=1.0
 - Left-early trips where the final stop is among the future stops: 143 / 143 (100.0%)
 - Removal time minus final stop's held arrival.time, completed trips with final stop present (n=557 of 557 completed): p5=1.0, p25=5.0, p50=9.0, p75=17.0, p95=36.0
 
@@ -112,6 +112,18 @@ Among 700 trip removals:
 - Total leave-and-return events: 6
 - Absence duration percentiles (s), n=6: p5=31.0, p25=31.0, p50=31.5, p75=32.8, p95=41.2
 - Stops dropped while absent, percentiles, n=6: p5=0.0, p25=0.0, p50=0.0, p75=0.8, p95=1.0
+
+## Check 6: held values without the marker
+
+Held values without `uncertainty = 0`: 494 / 17183 (2.9%)
+
+By stop position and how the stop left the feed:
+- first, clean drop: 1 / 494 (0.2%)
+- first, trip removal: 0 / 494 (0.0%)
+- intermediate, clean drop: 12 / 494 (2.4%)
+- intermediate, trip removal: 5 / 494 (1.0%)
+- final, clean drop: 0 / 494 (0.0%)
+- final, trip removal: 476 / 494 (96.4%)
 
 ## V1-V4: VehiclePositions
 

@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import itertools
 import os
 import sys
 import tempfile
@@ -64,6 +65,32 @@ def scheduled_time_utc(svc_date: date, hms: str) -> int | None:
     return int(result.timestamp())
 
 
+def assert_unique(con: duckdb.DuckDBPyConnection, table: str, key_cols: list[str]) -> None:
+    """Fails loudly if `table` is not unique on key_cols. Every stop-event
+    table in this script is keyed on (trip, stop_sequence) - a stop_id alone
+    can repeat within one trip on a looping route, so stop_id-keyed joins
+    silently fan out and duplicate rows."""
+    cols = ", ".join(key_cols)
+    n_total = con.execute(f"SELECT COUNT(*) FROM {table} AS __au_t").fetchone()[0]
+    n_distinct = con.execute(
+        f"SELECT COUNT(*) FROM (SELECT DISTINCT {cols} FROM {table} AS __au_t)"
+    ).fetchone()[0]
+    if n_total != n_distinct:
+        raise AssertionError(
+            f"{table} violates uniqueness on ({cols}): {n_total} rows, {n_distinct} distinct"
+        )
+
+
+def assert_unique_rows(rows: list[dict], key_cols: list[str], label: str) -> None:
+    """Python-side equivalent of assert_unique, for row lists already fetched
+    out of DuckDB (e.g. V4's classification rows)."""
+    keys = [tuple(r[c] for c in key_cols) for r in rows]
+    if len(keys) != len(set(keys)):
+        raise AssertionError(
+            f"{label} violates uniqueness on {key_cols}: {len(keys)} rows, {len(set(keys))} distinct"
+        )
+
+
 # --------------------------------------------------------------------------
 # Setup extensions on top of koda_scan_lib.setup_duckdb
 # --------------------------------------------------------------------------
@@ -97,7 +124,7 @@ def setup_held_value_tables(con: duckdb.DuckDBPyConnection, static_dir: Path) ->
         "r.arrival_uncertainty, r.arrival_uncertainty_present, "
         "r.departure_time, r.departure_time_present, r.departure_delay, r.departure_delay_present, "
         "r.departure_uncertainty, r.departure_uncertainty_present, "
-        "(sfs.final_stop_id IS NOT NULL AND r.stop_id = sfs.final_stop_id) AS is_final_stop "
+        "(sfs.final_stop_sequence IS NOT NULL AND r.stop_sequence = sfs.final_stop_sequence) AS is_final_stop "
         "FROM rows_dedup r "
         "JOIN target_trips tt ON r.trip_id = tt.trip_id AND COALESCE(r.start_date,'') = COALESCE(tt.start_date,'') "
         "LEFT JOIN static_final_stop sfs ON sfs.trip_id = r.trip_id "
@@ -126,7 +153,7 @@ def setup_held_value_tables(con: duckdb.DuckDBPyConnection, static_dir: Path) ->
         "LAG(held_time) OVER w AS prev_held_time, "
         "(held_time IS DISTINCT FROM LAG(held_time) OVER w) AS changed "
         "FROM held_series "
-        "WINDOW w AS (PARTITION BY trip_id, start_date, stop_id ORDER BY header_timestamp)"
+        "WINDOW w AS (PARTITION BY trip_id, start_date, stop_sequence ORDER BY header_timestamp)"
     )
 
 
@@ -148,19 +175,19 @@ def build_held_value_summary(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         "CREATE OR REPLACE TABLE held_value_at_cross AS "
-        "SELECT s.trip_id, s.start_date, s.stop_id, h.held_time AS value_at_t_cross "
+        "SELECT s.trip_id, s.start_date, s.stop_sequence, h.held_time AS value_at_t_cross "
         "FROM held_value_summary s JOIN held_series_annotated h "
         "ON h.trip_id = s.trip_id AND COALESCE(h.start_date,'') = COALESCE(s.start_date,'') "
-        "AND h.stop_id = s.stop_id AND h.header_timestamp = s.t_cross"
+        "AND h.stop_sequence = s.stop_sequence AND h.header_timestamp = s.t_cross"
     )
     con.execute(
         "CREATE OR REPLACE TABLE changes_after_cross AS "
-        "SELECT s.trip_id, s.start_date, s.stop_id, "
+        "SELECT s.trip_id, s.start_date, s.stop_sequence, "
         "COUNT(*) FILTER (WHERE h.changed AND h.header_timestamp > s.t_cross) AS n_changes_after_cross "
         "FROM held_value_summary s JOIN held_series_annotated h "
-        "ON h.trip_id = s.trip_id AND COALESCE(h.start_date,'') = COALESCE(s.start_date,'') AND h.stop_id = s.stop_id "
+        "ON h.trip_id = s.trip_id AND COALESCE(h.start_date,'') = COALESCE(s.start_date,'') AND h.stop_sequence = s.stop_sequence "
         "WHERE s.t_cross IS NOT NULL "
-        "GROUP BY s.trip_id, s.start_date, s.stop_id"
+        "GROUP BY s.trip_id, s.start_date, s.stop_sequence"
     )
     con.execute(
         "CREATE OR REPLACE TABLE trip_last_ts AS "
@@ -177,12 +204,13 @@ def build_held_value_summary(con: duckdb.DuckDBPyConnection) -> None:
         "(hvs.held_ts = tlt.trip_last_ts) AS is_trip_removal "
         "FROM held_value_summary hvs "
         "LEFT JOIN held_value_at_cross hvac "
-        "ON hvac.trip_id = hvs.trip_id AND COALESCE(hvac.start_date,'') = COALESCE(hvs.start_date,'') AND hvac.stop_id = hvs.stop_id "
+        "ON hvac.trip_id = hvs.trip_id AND COALESCE(hvac.start_date,'') = COALESCE(hvs.start_date,'') AND hvac.stop_sequence = hvs.stop_sequence "
         "LEFT JOIN changes_after_cross cac "
-        "ON cac.trip_id = hvs.trip_id AND COALESCE(cac.start_date,'') = COALESCE(hvs.start_date,'') AND cac.stop_id = hvs.stop_id "
+        "ON cac.trip_id = hvs.trip_id AND COALESCE(cac.start_date,'') = COALESCE(hvs.start_date,'') AND cac.stop_sequence = hvs.stop_sequence "
         "JOIN trip_last_ts tlt "
         "ON tlt.trip_id = hvs.trip_id AND COALESCE(tlt.start_date,'') = COALESCE(hvs.start_date,'')"
     )
+    assert_unique(con, "held_value_check1", ["trip_id", "COALESCE(start_date,'')", "stop_sequence"])
 
 
 # --------------------------------------------------------------------------
@@ -375,9 +403,9 @@ def check3(con: duckdb.DuckDBPyConnection) -> dict:
         "SELECT hvc.trip_id, hvc.start_date, hvc.held_ts AS removal_ts, "
         "COUNT(*) AS n_stops_remaining, "
         "COUNT(*) FILTER (WHERE hvc.held_value > hvc.held_ts) AS n_future, "
-        "BOOL_OR(hvc.stop_id = sfs.final_stop_id) AS final_stop_present, "
-        "BOOL_OR(hvc.stop_id = sfs.final_stop_id AND hvc.held_value > hvc.held_ts) AS final_stop_is_future, "
-        "MAX(hvc.held_value) FILTER (WHERE hvc.stop_id = sfs.final_stop_id) AS final_stop_held_value "
+        "BOOL_OR(hvc.stop_sequence = sfs.final_stop_sequence) AS final_stop_present, "
+        "BOOL_OR(hvc.stop_sequence = sfs.final_stop_sequence AND hvc.held_value > hvc.held_ts) AS final_stop_is_future, "
+        "MAX(hvc.held_value) FILTER (WHERE hvc.stop_sequence = sfs.final_stop_sequence) AS final_stop_held_value "
         "FROM held_value_check1 hvc "
         "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id "
         "WHERE hvc.is_trip_removal "
@@ -527,16 +555,16 @@ def check5c_large_gaps(con: duckdb.DuckDBPyConnection) -> list[tuple]:
 def check5d_leave_and_return(con: duckdb.DuckDBPyConnection) -> dict:
     con.execute(
         "CREATE OR REPLACE TABLE held_trip_snapshot_stops AS "
-        "SELECT trip_id, start_date, header_timestamp, LIST(stop_id) AS stop_ids "
+        "SELECT trip_id, start_date, header_timestamp, LIST(stop_sequence) AS stop_seqs "
         "FROM held_series_annotated GROUP BY trip_id, start_date, header_timestamp"
     )
     rows = con.execute(
-        "SELECT trip_id, start_date, header_timestamp, stop_ids FROM held_trip_snapshot_stops "
+        "SELECT trip_id, start_date, header_timestamp, stop_seqs FROM held_trip_snapshot_stops "
         "ORDER BY trip_id, start_date, header_timestamp"
     ).fetchall()
     timelines: dict[tuple, list[tuple[int, set]]] = {}
-    for trip_id, start_date, ts, stop_ids in rows:
-        timelines.setdefault((trip_id, start_date), []).append((ts, set(stop_ids or [])))
+    for trip_id, start_date, ts, stop_seqs in rows:
+        timelines.setdefault((trip_id, start_date), []).append((ts, set(stop_seqs or [])))
 
     snapshot_ts = [
         r[0]
@@ -569,6 +597,40 @@ def check5d_leave_and_return(con: duckdb.DuckDBPyConnection) -> dict:
         "n_events": len(events),
         "duration_percentiles": {q: percentile(durations, q) for q in (5, 25, 50, 75, 95)},
         "dropped_percentiles": {q: percentile(dropped_counts, q) for q in (5, 25, 50, 75, 95)},
+    }
+
+
+# --------------------------------------------------------------------------
+# Check 6: held values without the recorded-time marker, by stop position and
+# by how the stop left the feed (TripUpdates only - both dates)
+# --------------------------------------------------------------------------
+
+
+def check6_missing_marker(con: duckdb.DuckDBPyConnection) -> dict:
+    n_total = con.execute("SELECT COUNT(*) FROM held_value_check1").fetchone()[0]
+    n_missing = con.execute(
+        "SELECT COUNT(*) FROM held_value_check1 WHERE NOT held_uncertainty_present"
+    ).fetchone()[0]
+
+    rows = con.execute(
+        "SELECT "
+        "CASE WHEN sfs.final_stop_sequence = hvc.stop_sequence THEN 'final' "
+        "     WHEN sfirst.first_stop_sequence = hvc.stop_sequence THEN 'first' "
+        "     ELSE 'intermediate' END AS position, "
+        "CASE WHEN hvc.is_trip_removal THEN 'trip_removal' ELSE 'clean_drop' END AS leave_kind, "
+        "COUNT(*) "
+        "FROM held_value_check1 hvc "
+        "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id "
+        "LEFT JOIN static_first_stop sfirst ON sfirst.trip_id = hvc.trip_id "
+        "WHERE NOT hvc.held_uncertainty_present "
+        "GROUP BY 1, 2"
+    ).fetchall()
+    breakdown = {(position, leave_kind): n for position, leave_kind, n in rows}
+
+    return {
+        "n_total": n_total,
+        "n_missing": n_missing,
+        "breakdown": breakdown,
     }
 
 
@@ -609,6 +671,7 @@ def setup_vp_tables(con: duckdb.DuckDBPyConnection, vp_glob: str, svc_date_obj: 
         "JOIN target_trips tt ON tt.trip_id = sfs.trip_id"
     ).fetchall()
     trip_ids, window_starts, window_ends = [], [], []
+    span_trip_ids, span_starts, span_ends = [], [], []
     for trip_id, first_dep_hms, final_arr_hms in rows:
         if not first_dep_hms or not final_arr_hms:
             continue
@@ -619,10 +682,23 @@ def setup_vp_tables(con: duckdb.DuckDBPyConnection, vp_glob: str, svc_date_obj: 
         trip_ids.append(trip_id)
         window_starts.append(first_dep - 30 * 60)
         window_ends.append(final_arr + 90 * 60)
+        span_trip_ids.append(trip_id)
+        span_starts.append(first_dep)
+        span_ends.append(final_arr)
     tbl = pa.table({"trip_id": trip_ids, "window_start": window_starts, "window_end": window_ends})
     con.register("vp_window_src", tbl)
     con.execute("CREATE OR REPLACE TABLE vp_trip_window AS SELECT * FROM vp_window_src")
     con.unregister("vp_window_src")
+
+    # Unpadded scheduled span (no +-30/90min matching padding), used only to
+    # scope V1 assignment dropouts to a trip's actual scheduled duration. The
+    # matching window above (vp_trip_window) is unchanged.
+    span_tbl = pa.table(
+        {"trip_id": span_trip_ids, "span_start": span_starts, "span_end": span_ends}
+    )
+    con.register("vp_span_src", span_tbl)
+    con.execute("CREATE OR REPLACE TABLE vp_trip_span AS SELECT * FROM vp_span_src")
+    con.unregister("vp_span_src")
 
     con.execute(
         "CREATE OR REPLACE TABLE vp_trip_pings_windowed AS "
@@ -770,8 +846,8 @@ def v1_per_trip_summary(con: duckdb.DuckDBPyConnection) -> dict:
 def v1_assignment_dropouts(con: duckdb.DuckDBPyConnection) -> dict:
     con.execute(
         "CREATE OR REPLACE TABLE vehicle_trip_windows AS "
-        "SELECT DISTINCT p.vehicle_id, p.trip_id, w.window_start, w.window_end "
-        "FROM vp_trip_pings p JOIN vp_trip_window w ON w.trip_id = p.trip_id"
+        "SELECT DISTINCT p.vehicle_id, p.trip_id, s.span_start AS window_start, s.span_end AS window_end "
+        "FROM vp_trip_pings p JOIN vp_trip_span s ON s.trip_id = p.trip_id"
     )
     con.execute(
         "CREATE OR REPLACE TABLE vp_untripped_dedup AS "
@@ -839,14 +915,15 @@ def build_vp_stop_distance(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         "CREATE OR REPLACE TABLE vp_eligible_stops AS "
         "SELECT hvc.trip_id, hvc.stop_id, hvc.stop_sequence, "
-        "(sfs.final_stop_id IS NOT NULL) AS is_final_stop, "
+        "(sfs.final_stop_sequence IS NOT NULL AND sfs.final_stop_sequence = hvc.stop_sequence) AS is_final_stop, "
         "sl.sched_arrival_utc, sl.sched_departure_utc, "
-        "CASE WHEN sfs.final_stop_id IS NOT NULL THEN sl.sched_arrival_utc ELSE sl.sched_departure_utc END "
+        "CASE WHEN sfs.final_stop_sequence = hvc.stop_sequence THEN sl.sched_arrival_utc ELSE sl.sched_departure_utc END "
         "AS sched_ref_time "
         "FROM held_value_check1 hvc "
-        "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id AND sfs.final_stop_id = hvc.stop_id "
+        "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id "
         "JOIN sched_lookup sl ON sl.trip_id = hvc.trip_id AND sl.stop_sequence = hvc.stop_sequence"
     )
+    assert_unique(con, "vp_eligible_stops", ["trip_id", "stop_sequence"])
     con.execute(
         "CREATE OR REPLACE TABLE vp_stop_distance AS "
         "SELECT es.trip_id, es.stop_id, es.stop_sequence, es.is_final_stop, es.sched_ref_time, "
@@ -880,42 +957,47 @@ def v2_passage_at_radius(con: duckdb.DuckDBPyConnection, radius_m: int) -> dict:
 
     n_eligible = con.execute("SELECT COUNT(*) FROM vp_eligible_stops").fetchone()[0]
     visit_counts = con.execute(
-        "SELECT trip_id, stop_id, COUNT(*) AS n_visits FROM vp_visits GROUP BY trip_id, stop_id"
+        "SELECT trip_id, stop_sequence, COUNT(*) AS n_visits FROM vp_visits GROUP BY trip_id, stop_sequence"
     ).fetchall()
     n_detected = len(visit_counts)
-    n_multi_visit = sum(1 for _tid, _sid, n in visit_counts if n > 1)
+    n_multi_visit = sum(1 for _tid, _seq, n in visit_counts if n > 1)
     n_no_ping_within_r = n_eligible - n_detected
 
     con.execute(
         "CREATE OR REPLACE TABLE vp_chosen_visit AS "
         "SELECT trip_id, stop_id, stop_sequence, is_final_stop, visit_start, visit_end, sched_ref_time, "
-        "ROW_NUMBER() OVER (PARTITION BY trip_id, stop_id ORDER BY ABS(visit_start - sched_ref_time)) AS rn "
+        "ROW_NUMBER() OVER (PARTITION BY trip_id, stop_sequence ORDER BY ABS(visit_start - sched_ref_time)) AS rn "
         "FROM vp_visits"
+    )
+    assert_unique(
+        con,
+        "(SELECT * FROM vp_chosen_visit WHERE rn = 1)",
+        ["trip_id", "stop_sequence"],
     )
 
     con.execute(
         "CREATE OR REPLACE TABLE vp_departure_estimate AS "
-        "SELECT v.trip_id, v.stop_id, v.visit_end AS last_in_visit, "
+        "SELECT v.trip_id, v.stop_sequence, v.visit_end AS last_in_visit, "
         "MIN(p.vehicle_timestamp) FILTER (WHERE p.vehicle_timestamp > v.visit_end AND p.distance_m > "
         + str(radius_m)
         + ") "
         "AS first_out_after "
         "FROM vp_chosen_visit v "
-        "JOIN vp_stop_distance p ON p.trip_id = v.trip_id AND p.stop_id = v.stop_id "
+        "JOIN vp_stop_distance p ON p.trip_id = v.trip_id AND p.stop_sequence = v.stop_sequence "
         "WHERE v.rn = 1 "
-        "GROUP BY v.trip_id, v.stop_id, v.visit_end"
+        "GROUP BY v.trip_id, v.stop_sequence, v.visit_end"
     )
     con.execute(
         "CREATE OR REPLACE TABLE vp_arrival_estimate AS "
-        "SELECT v.trip_id, v.stop_id, v.visit_start AS first_in_visit, "
+        "SELECT v.trip_id, v.stop_sequence, v.visit_start AS first_in_visit, "
         "MAX(p.vehicle_timestamp) FILTER (WHERE p.vehicle_timestamp < v.visit_start AND p.distance_m > "
         + str(radius_m)
         + ") "
         "AS last_out_before "
         "FROM vp_chosen_visit v "
-        "JOIN vp_stop_distance p ON p.trip_id = v.trip_id AND p.stop_id = v.stop_id "
+        "JOIN vp_stop_distance p ON p.trip_id = v.trip_id AND p.stop_sequence = v.stop_sequence "
         "WHERE v.rn = 1 AND v.is_final_stop "
-        "GROUP BY v.trip_id, v.stop_id, v.visit_start"
+        "GROUP BY v.trip_id, v.stop_sequence, v.visit_start"
     )
 
     dep_widths = [
@@ -954,28 +1036,30 @@ def v2_passage_at_radius(con: duckdb.DuckDBPyConnection, radius_m: int) -> dict:
 def build_vp_estimate(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         "CREATE OR REPLACE TABLE vp_estimate AS "
-        "SELECT v.trip_id, v.stop_id, "
+        "SELECT v.trip_id, v.stop_id, v.stop_sequence, "
         "CASE WHEN v.is_final_stop THEN (a.first_in_visit + a.last_out_before) / 2.0 "
         "ELSE (d.last_in_visit + d.first_out_after) / 2.0 END AS vp_time "
         "FROM vp_chosen_visit v "
-        "LEFT JOIN vp_departure_estimate d ON d.trip_id = v.trip_id AND d.stop_id = v.stop_id "
-        "LEFT JOIN vp_arrival_estimate a ON a.trip_id = v.trip_id AND a.stop_id = v.stop_id "
+        "LEFT JOIN vp_departure_estimate d ON d.trip_id = v.trip_id AND d.stop_sequence = v.stop_sequence "
+        "LEFT JOIN vp_arrival_estimate a ON a.trip_id = v.trip_id AND a.stop_sequence = v.stop_sequence "
         "WHERE v.rn = 1 "
         "AND ((v.is_final_stop AND a.last_out_before IS NOT NULL) "
         "OR (NOT v.is_final_stop AND d.first_out_after IS NOT NULL))"
     )
+    assert_unique(con, "vp_estimate", ["trip_id", "stop_sequence"])
     con.execute(
         "CREATE OR REPLACE TABLE v3_offsets AS "
         "SELECT hvc.trip_id, hvc.stop_id, hvc.stop_sequence, hvc.is_trip_removal, "
         "hvc.held_uncertainty_present, hvc.n_changes_after_cross, "
         "(hvc.held_value - ve.vp_time) AS time_offset, "
-        "(sfs.final_stop_id IS NOT NULL) AS is_final_stop, "
-        "(sfirst.first_stop_id = hvc.stop_id) AS is_first_stop "
+        "(sfs.final_stop_sequence = hvc.stop_sequence) AS is_final_stop, "
+        "(sfirst.first_stop_sequence = hvc.stop_sequence) AS is_first_stop "
         "FROM held_value_check1 hvc "
-        "JOIN vp_estimate ve ON ve.trip_id = hvc.trip_id AND ve.stop_id = hvc.stop_id "
-        "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id AND sfs.final_stop_id = hvc.stop_id "
+        "JOIN vp_estimate ve ON ve.trip_id = hvc.trip_id AND ve.stop_sequence = hvc.stop_sequence "
+        "LEFT JOIN static_final_stop sfs ON sfs.trip_id = hvc.trip_id "
         "LEFT JOIN static_first_stop sfirst ON sfirst.trip_id = hvc.trip_id"
     )
+    assert_unique(con, "v3_offsets", ["trip_id", "stop_sequence"])
 
 
 def summarize_offsets(offsets: list[float]) -> dict:
@@ -1060,40 +1144,115 @@ def classify_delay(delay_s: float) -> str:
     return "late"
 
 
-def v4_classification_agreement(con: duckdb.DuckDBPyConnection) -> dict:
-    rows = con.execute(
-        "SELECT ve.trip_id, ve.stop_id, hvc.held_value, ve.vp_time, sl.sched_ref_time "
-        "FROM vp_estimate ve "
-        "JOIN held_value_check1 hvc ON hvc.trip_id = ve.trip_id AND hvc.stop_id = ve.stop_id "
-        "JOIN vp_eligible_stops sl ON sl.trip_id = ve.trip_id AND sl.stop_id = ve.stop_id "
-        "WHERE sl.sched_ref_time IS NOT NULL"
-    ).fetchall()
-
+def v4_matrix_and_shares(rows: list[dict]) -> dict:
     matrix: dict[tuple[str, str], int] = {}
-    held_classes, vp_classes = [], []
-    for _tid, _sid, held_value, vp_time, sched_ref in rows:
-        held_delay = held_value - sched_ref
-        vp_delay = vp_time - sched_ref
-        hc = classify_delay(held_delay)
-        vc = classify_delay(vp_delay)
+    for r in rows:
+        hc = classify_delay(r["held_delay"])
+        vc = classify_delay(r["vp_delay"])
         matrix[(hc, vc)] = matrix.get((hc, vc), 0) + 1
-        held_classes.append(hc)
-        vp_classes.append(vc)
 
     n_total = len(rows)
     on_time_shares = {}
     for label, threshold in (("180s", 180), ("60s", 60), ("300s", 300)):
-        held_on_time = sum(1 for _tid, _sid, hv, _vt, sr in rows if -60 <= (hv - sr) <= threshold)
-        vp_on_time = sum(1 for _tid, _sid, _hv, vt, sr in rows if -60 <= (vt - sr) <= threshold)
+        held_on_time = sum(1 for r in rows if -60 <= r["held_delay"] <= threshold)
+        vp_on_time = sum(1 for r in rows if -60 <= r["vp_delay"] <= threshold)
         on_time_shares[label] = {
             "held": {"n_on_time": held_on_time, "n_total": n_total},
             "vp": {"n_on_time": vp_on_time, "n_total": n_total},
         }
 
+    return {"n_total": n_total, "matrix": matrix, "on_time_shares": on_time_shares}
+
+
+def v4_classification_agreement(con: duckdb.DuckDBPyConnection) -> dict:
+    raw = con.execute(
+        "SELECT ve.trip_id, ve.stop_sequence, hvc.held_value, ve.vp_time, sl.sched_ref_time, "
+        "hvc.held_uncertainty_present, sl.is_final_stop, "
+        "(sfirst.first_stop_sequence = ve.stop_sequence) AS is_first_stop "
+        "FROM vp_estimate ve "
+        "JOIN held_value_check1 hvc ON hvc.trip_id = ve.trip_id AND hvc.stop_sequence = ve.stop_sequence "
+        "JOIN vp_eligible_stops sl ON sl.trip_id = ve.trip_id AND sl.stop_sequence = ve.stop_sequence "
+        "LEFT JOIN static_first_stop sfirst ON sfirst.trip_id = ve.trip_id "
+        "WHERE sl.sched_ref_time IS NOT NULL"
+    ).fetchall()
+    cols = [
+        "trip_id",
+        "stop_sequence",
+        "held_value",
+        "vp_time",
+        "sched_ref_time",
+        "held_uncertainty_present",
+        "is_final_stop",
+        "is_first_stop",
+    ]
+    rows = [dict(zip(cols, r, strict=True)) for r in raw]
+    assert_unique_rows(rows, ["trip_id", "stop_sequence"], "v4 rows")
+    for r in rows:
+        r["held_delay"] = r["held_value"] - r["sched_ref_time"]
+        r["vp_delay"] = r["vp_time"] - r["sched_ref_time"]
+
+    def pos(r: dict) -> str:
+        if r["is_final_stop"]:
+            return "final"
+        if r["is_first_stop"]:
+            return "first"
+        return "intermediate"
+
+    overall = v4_matrix_and_shares(rows)
+    by_position = {
+        p: v4_matrix_and_shares([r for r in rows if pos(r) == p])
+        for p in ("first", "intermediate", "final")
+    }
+    by_marker = {
+        "all": overall,
+        "marker_present": v4_matrix_and_shares([r for r in rows if r["held_uncertainty_present"]]),
+    }
+
     return {
-        "n_total": n_total,
-        "matrix": matrix,
-        "on_time_shares": on_time_shares,
+        "n_total": overall["n_total"],
+        "matrix": overall["matrix"],
+        "on_time_shares": overall["on_time_shares"],
+        "by_position": by_position,
+        "by_marker": by_marker,
+    }
+
+
+# --------------------------------------------------------------------------
+# VP reconciliation: held values -> eligible stop events -> detected in V2 ->
+# V3 events -> V4 events, all at R=50m. Call right after the R=50m V2/V3/V4
+# pipeline has run, so vp_visits/v3_offsets reflect that radius.
+# --------------------------------------------------------------------------
+
+
+def build_vp_reconciliation(con: duckdb.DuckDBPyConnection, n_v4: int) -> dict:
+    n_held_values = con.execute("SELECT COUNT(*) FROM held_value_check1").fetchone()[0]
+    n_eligible = con.execute("SELECT COUNT(*) FROM vp_eligible_stops").fetchone()[0]
+    n_v2 = con.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT trip_id, stop_sequence FROM vp_visits)"
+    ).fetchone()[0]
+    n_v3 = con.execute("SELECT COUNT(*) FROM v3_offsets").fetchone()[0]
+
+    stages = [
+        ("held_values", n_held_values),
+        ("eligible_stop_events", n_eligible),
+        ("detected_in_v2", n_v2),
+        ("v3_events", n_v3),
+        ("v4_events", n_v4),
+    ]
+    for (prev_label, prev_n), (label, n) in itertools.pairwise(stages):
+        if n > prev_n:
+            raise AssertionError(
+                f"VP reconciliation: {label} ({n}) exceeds {prev_label} ({prev_n})"
+            )
+    if n_v3 != n_v4:
+        raise AssertionError(f"VP reconciliation: V3 events ({n_v3}) != V4 events ({n_v4})")
+
+    return {
+        "n_held_values": n_held_values,
+        "n_eligible": n_eligible,
+        "n_v2": n_v2,
+        "n_v3": n_v3,
+        "n_v4": n_v4,
     }
 
 
@@ -1311,6 +1470,24 @@ def render_report(ctx: dict) -> str:
     )
     lines.append("")
 
+    # Check 6
+    c6 = ctx["check6"]
+    lines.append("## Check 6: held values without the marker")
+    lines.append("")
+    lines.append(
+        f"Held values without `uncertainty = 0`: {fmt_share(c6['n_missing'], c6['n_total'])}"
+    )
+    lines.append("")
+    lines.append("By stop position and how the stop left the feed:")
+    for position in ("first", "intermediate", "final"):
+        for leave_kind, leave_label in (
+            ("clean_drop", "clean drop"),
+            ("trip_removal", "trip removal"),
+        ):
+            n = c6["breakdown"].get((position, leave_kind), 0)
+            lines.append(f"- {position}, {leave_label}: {fmt_share(n, c6['n_missing'])}")
+    lines.append("")
+
     # V sections
     if not ctx["vp_ran"]:
         lines.append("## V1-V4: VehiclePositions")
@@ -1318,6 +1495,20 @@ def render_report(ctx: dict) -> str:
         lines.append(f"Not run for {d}. {ctx.get('vp_not_run_reason', '')}")
         lines.append("")
     else:
+        rec = ctx["vp_reconciliation"]
+        lines.append("## VehiclePositions reconciliation (R = 50m)")
+        lines.append("")
+        lines.append(
+            "Funnel from held values to V4 events; no stage exceeds the one before it, and V3 "
+            "and V4 counts must match:"
+        )
+        lines.append(f"- Held values: {rec['n_held_values']}")
+        lines.append(f"- Eligible stop events: {rec['n_eligible']}")
+        lines.append(f"- Detected in V2: {rec['n_v2']}")
+        lines.append(f"- V3 events: {rec['n_v3']}")
+        lines.append(f"- V4 events: {rec['n_v4']}")
+        lines.append("")
+
         v1 = ctx["v1"]
         lines.append("## V1: field population")
         lines.append("")
@@ -1429,22 +1620,41 @@ def render_report(ctx: dict) -> str:
         lines.append("## V4: classification agreement")
         lines.append("")
         v4 = ctx["v4"]
+
+        def render_v4_block(label: str, block: dict) -> None:
+            lines.append(f"**{label}** (n={block['n_total']}):")
+            lines.append("- 3x3 matrix (held_class, vp_class): counts")
+            for (hc, vc), n in sorted(block["matrix"].items()):
+                lines.append(f"  - ({hc}, {vc}): {n}")
+            lines.append("- On-time share by source and threshold:")
+            for th_label, shares in block["on_time_shares"].items():
+                held = shares["held"]
+                vp = shares["vp"]
+                lines.append(
+                    f"  - +{th_label}: held {fmt_share(held['n_on_time'], held['n_total'])}, "
+                    f"vp {fmt_share(vp['n_on_time'], vp['n_total'])}"
+                )
+            lines.append("")
+
         lines.append(
             f"Among {v4['n_total']} events with both a held-value and a VP-based classification (R=50m):"
         )
-        lines.append("- 3x3 matrix (held_class, vp_class): counts")
-        for (hc, vc), n in sorted(v4["matrix"].items()):
-            lines.append(f"  - ({hc}, {vc}): {n}")
         lines.append("")
-        lines.append("On-time share by source and threshold:")
-        for th_label, shares in v4["on_time_shares"].items():
-            held = shares["held"]
-            vp = shares["vp"]
-            lines.append(
-                f"- +{th_label}: held {fmt_share(held['n_on_time'], held['n_total'])}, "
-                f"vp {fmt_share(vp['n_on_time'], vp['n_total'])}"
-            )
+        lines.append("**By stop position:**")
         lines.append("")
+        for label, key in (
+            ("First", "first"),
+            ("Intermediate", "intermediate"),
+            ("Final", "final"),
+        ):
+            render_v4_block(label, v4["by_position"][key])
+        lines.append("**By marker presence on the held value:**")
+        lines.append("")
+        for label, key in (
+            ("All held values", "all"),
+            ("Marker present (uncertainty = 0)", "marker_present"),
+        ):
+            render_v4_block(label, v4["by_marker"][key])
 
     lines.append("## Observations")
     lines.append("")
@@ -1569,6 +1779,7 @@ def main() -> int:
             c5b = {"start_date_distribution": start_dates, **match}
         c5c = check5c_large_gaps(con)
         c5d = check5d_leave_and_return(con)
+        c6 = check6_missing_marker(con)
 
         ctx = {
             "date": svc_date,
@@ -1589,6 +1800,7 @@ def main() -> int:
             "check5b": c5b,
             "check5c": c5c,
             "check5d": c5d,
+            "check6": c6,
             "vp_ran": False,
         }
 
@@ -1628,12 +1840,13 @@ def main() -> int:
                 if radius_m == 50:
                     v3_full = v3_held_vs_vp(con)
                     v4 = v4_classification_agreement(con)
+                    vp_reconciliation = build_vp_reconciliation(con, v4["n_total"])
                 else:
                     offsets = [
                         r[0]
                         for r in con.execute(
                             "SELECT (hvc.held_value - ve.vp_time) FROM held_value_check1 hvc "
-                            "JOIN vp_estimate ve ON ve.trip_id = hvc.trip_id AND ve.stop_id = hvc.stop_id"
+                            "JOIN vp_estimate ve ON ve.trip_id = hvc.trip_id AND ve.stop_sequence = hvc.stop_sequence"
                         ).fetchall()
                     ]
                     v3_compact[radius_m] = summarize_offsets(offsets)
@@ -1650,6 +1863,7 @@ def main() -> int:
                     "v3": v3_full,
                     "v3_compact": v3_compact,
                     "v4": v4,
+                    "vp_reconciliation": vp_reconciliation,
                 }
             )
         else:
