@@ -25,6 +25,7 @@ Status labels:
 | Storage time zone | UTC everywhere in stored data | FIXED |
 | Reporting time zone | `Europe/Stockholm` (handles DST) | FIXED |
 | Service day | The GTFS service date. Trips with scheduled times past 24:00 belong to the previous service day, as in the GTFS spec | FIXED |
+| Realtime-to-schedule matching | A realtime trip is matched to the static schedule on `trip_id` and `start_date`, using the KoDa static schedule for that start date. Processing service date D reads D's TripUpdates archives plus D+1's archives up to and including the hour containing the time two hours after D's last scheduled arrival. A trip found in D's archives with `start_date` D−1 belongs to D−1 (D-011) | FIXED |
 
 ## Observed times
 

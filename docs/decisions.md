@@ -277,3 +277,36 @@ unobserved. They are never labelled cancelled.
   missing because the feed was, not because the service was.
 - The route-day output needs this count and share. `docs/data_dictionary.md` is updated
   when the aggregation is built.
+
+---
+
+## D-011 · 2026-09-21 · Matching realtime trips to the schedule by service date
+
+**Decision:** Realtime trips are matched to the static schedule on `trip_id` and
+`start_date`, using the KoDa static schedule for that start date. Processing service
+date D reads D's TripUpdates archives plus D+1's archives up to and including the hour
+containing the time two hours after D's last scheduled arrival. A trip found in D's
+archives with `start_date` D−1 belongs to D−1.
+
+**Reason:**
+
+- A date's archives contain trips from the previous service date. On 2026-09-06, 59 of
+  760 realtime trips did not match that date's schedule. All 59 carried start date
+  2026-09-05 and all matched the 2026-09-05 schedule. Matching against the date's own
+  schedule alone would have left them unmatched, to be counted as added trips.
+- The reverse also holds: a service date's trips that run after midnight appear in the
+  next date's archives. KoDa's hourly archives follow Europe/Stockholm local hours; the
+  2026-09-06 hour 00 archive starts at 23:59:43 local time on the 5th.
+- `start_date` is populated on every realtime trip on both validated days.
+- The two-hour margin covers late running and the roughly 600 s the feed keeps passed
+  stops (D-007), at the cost of a few extra hourly archives.
+
+**Consequences:**
+
+- The Service day rule is unchanged. This decision makes it operational.
+- A realtime trip that still matches no scheduled trip under this rule is an added trip
+  (PROVISIONAL). None occurred on the validated days.
+- The fetcher requests local hours 00–23. On the two days a year when Sweden changes
+  clocks, the local day has 23 or 25 hours, and how KoDa names those archives is
+  unverified. This must be resolved before the analysis period, still OPEN, includes
+  such a day.
