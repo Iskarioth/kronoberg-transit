@@ -10,10 +10,11 @@ Format: date, decision, reason, consequences.
 **Decision:** Cleaned stop-level data lives in Parquet. Google Sheets holds only daily
 aggregates.
 
-**Reason:** A Google spreadsheet is capped at 10 million cells. A year of deduplicated
-Kronoberg stop events is roughly 11 to 22 million rows (estimate, to be verified from
-`trips.txt`), which is several times over the cap even at six columns. Route-level daily
-aggregates for a year are around 18,000 rows.
+**Reason:** A Google spreadsheet is capped at 10 million cells. Measured from KoDa's
+static schedule for service date 2026-09-07: 2,162 trips scheduled, 49,204 `stop_times`
+rows. Annualized, that is roughly 18 million stop-level rows a year, which is several
+times over the cap even at six columns. Route-level daily aggregates for a year are
+around 18,000 rows.
 
 **Consequences:** Any analysis that needs stop-level detail runs in DuckDB against the
 Parquet files, not in Sheets.
