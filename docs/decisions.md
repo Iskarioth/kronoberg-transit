@@ -209,6 +209,15 @@ The Measurement point moves from PROVISIONAL to FIXED.
 - The transform still extracts final-stop events with their marker flag, so this
   choice can be revisited without refetching.
 
+**Correction (2026-09-21):** The validation scans excluded `SKIPPED` stop updates before
+picking each stop's last value. As a result, on 2026-09-07 they counted 41 stops that
+D-009 classes as skipped as held values without the marker. Measured in the warehouse
+(D-012), excluding cancelled trips and skipped stops, non-final stops with a held value
+but no marker are 206 on 2026-09-07 and 18 on 2026-09-06: about 0.5% and 0.1% of
+non-final stops with a held value. The D-007 figures for values without the marker
+(3.6% on Monday, 85% of them final stops) include the same 41 stops. The conclusions of
+D-007 and D-008 do not change.
+
 ---
 
 ## D-009 · 2026-09-21 · Skipped stops, and what coverage counts
