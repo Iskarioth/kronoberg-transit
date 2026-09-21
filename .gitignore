@@ -10,6 +10,9 @@ data/
 *.duckdb
 *.duckdb.wal
 
+# Except small test fixtures (CLAUDE.md rule 5: tests/fixtures/, each under 1 MB)
+!tests/fixtures/**/*.parquet
+
 # Python
 __pycache__/
 *.py[cod]

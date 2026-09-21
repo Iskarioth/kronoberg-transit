@@ -315,3 +315,33 @@ archives with `start_date` D−1 belongs to D−1.
   clocks, the local day has 23 or 25 hours, and how KoDa names those archives is
   unverified. This must be resolved before the analysis period, still OPEN, includes
   such a day.
+
+---
+
+## D-012 · 2026-09-21 · Warehouse grain: one row per scheduled stop event
+
+**Decision:** The Parquet warehouse holds one row per scheduled stop event per service
+date (`stop_events`) and one row per scheduled trip (`trips`). Alongside them are the
+day's `routes` and `stops` from the same-date static schedule, and one row per feed per
+day of snapshot statistics (`feed_quality`). All tables are partitioned by service date.
+Punctuality classes are not stored; aggregations derive them from `delay_s`. Final stops
+are kept with their arrival values and marker, but have no status, since they are
+outside the measurement point (D-008).
+
+**Reason:**
+
+- Every Sheet tab, coverage figure and sensitivity version can be computed from one
+  table, and anyone using the public dataset can reproduce them.
+- Keeping unobserved, skipped and cancelled stop events as rows means nothing is
+  silently dropped.
+- The On time, Early and Late thresholds are still PROVISIONAL. Storing the delay rather
+  than the class means a threshold change needs no reprocessing.
+- Raw archives are never stored by this project (CLAUDE.md), so snapshot statistics have
+  to be captured when a day is processed, or they are lost.
+
+**Consequences:**
+
+- The Sheet tabs become aggregates of these tables. Their schemas are revised when the
+  aggregation step is built.
+- Trips are labelled `in_feed`, `cancelled` or `no_realtime_data`. `in_feed` means the
+  trip appeared in TripUpdates, not that it ran as scheduled.

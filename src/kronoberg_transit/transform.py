@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+"""transform.py - build the stop-event warehouse for one service date (D-012).
+
+Reads D's same-date static schedule and D's TripUpdates archives, plus D+1's
+archives up to and including the hour containing the time two hours after D's
+last scheduled arrival (D-011). Writes five Parquet tables to
+data/warehouse/<table>/service_date=YYYY-MM-DD/part-0.parquet, replacing that
+date's partition. Never uploads anywhere and never touches Google Sheets.
+
+Usage:
+    uv run --env-file .env python -m kronoberg_transit.transform 2026-09-07
+"""
+
+import argparse
+import json
+import os
+import string
+import sys
+import tempfile
+import time
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+
+import duckdb
+
+from kronoberg_transit.fetch_koda import fetch_day
+from kronoberg_transit.gtfs_rt import HOURS, stage_date
+from kronoberg_transit.static_schedule import load_static_gtfs
+from kronoberg_transit.time_utils import STOCKHOLM
+from kronoberg_transit.time_utils import scheduled_time_utc as scheduled_time_utc_py
+
+OPERATOR = "krono"
+FEED = "TripUpdates"
+RAW_DIR = Path("data/raw/koda")
+STATIC_DIR = Path("data/static")
+INTERIM_DIR = Path("data/interim/transform")
+WAREHOUSE_DIR = Path("data/warehouse")
+LOG_DIR = Path("data/logs")
+SQL_DIR = Path(__file__).resolve().parent / "sql"
+
+TABLES = ["trips", "stop_events", "routes", "stops", "feed_quality"]
+
+
+class RunLog:
+    """Collects {stage, rows_in, rows_out} entries and writes them as JSON
+    lines (run_log column names from docs/data_dictionary.md)."""
+
+    def __init__(self, svc_date: str, run_type: str = "transform"):
+        self.svc_date = svc_date
+        self.run_type = run_type
+        self.entries: list[dict] = []
+
+    def stage(self, name: str, rows_in: int | None, rows_out: int | None, message: str = ""):
+        entry = {
+            "run_ts_utc": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "run_type": self.run_type,
+            "service_date": self.svc_date,
+            "stage": name,
+            "status": "ok",
+            "rows_in": rows_in,
+            "rows_out": rows_out,
+            "duration_s": None,
+            "message": message,
+        }
+        self.entries.append(entry)
+        print(f"  [{name}] rows_in={rows_in} rows_out={rows_out} {message}".rstrip())
+
+    def timed_stage(self, name: str):
+        return _TimedStage(self, name)
+
+    def write(self):
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = LOG_DIR / f"transform_{self.svc_date}.jsonl"
+        with out_path.open("w", encoding="utf-8") as f:
+            for entry in self.entries:
+                f.write(json.dumps(entry) + "\n")
+        return out_path
+
+
+class _TimedStage:
+    def __init__(self, log: RunLog, name: str):
+        self.log = log
+        self.name = name
+        self.rows_in = None
+        self.rows_out = None
+        self.message = ""
+        self._start = None
+
+    def __enter__(self):
+        self._start = time.monotonic()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        duration = time.monotonic() - self._start
+        entry = {
+            "run_ts_utc": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "run_type": self.log.run_type,
+            "service_date": self.log.svc_date,
+            "stage": self.name,
+            "status": "error" if exc_type else "ok",
+            "rows_in": self.rows_in,
+            "rows_out": self.rows_out,
+            "duration_s": round(duration, 3),
+            "message": self.message,
+        }
+        self.log.entries.append(entry)
+        print(
+            f"  [{self.name}] rows_in={self.rows_in} rows_out={self.rows_out} "
+            f"({duration:.2f}s) {self.message}".rstrip()
+        )
+        return False
+
+
+def render_sql(name: str, **params) -> str:
+    text = (SQL_DIR / name).read_text(encoding="utf-8")
+    return string.Template(text).substitute(**params)
+
+
+def duckdb_list_literal(paths: list[Path]) -> str:
+    quoted = ", ".join("'" + str(p).replace("\\", "/") + "'" for p in paths)
+    return f"[{quoted}]"
+
+
+def compute_next_day_cutoff_hours(con: duckdb.DuckDBPyConnection, svc_date_obj: date) -> list[int]:
+    """The D+1 local hours to read: none if D's last scheduled arrival plus
+    2h still falls on D itself, otherwise hours 0..cutoff_hour inclusive."""
+    max_arr_hms = con.execute("SELECT MAX(arrival_time) FROM scheduled_stop_times").fetchone()[0]
+    last_arrival_utc = scheduled_time_utc_py(svc_date_obj, max_arr_hms)
+    cutoff_utc = datetime.fromtimestamp(last_arrival_utc, tz=UTC) + timedelta(hours=2)
+    cutoff_local = cutoff_utc.astimezone(STOCKHOLM)
+    next_day = svc_date_obj + timedelta(days=1)
+    if cutoff_local.date() <= svc_date_obj:
+        return []
+    if cutoff_local.date() > next_day:
+        # Extremely late-running schedules would need more than one extra day;
+        # not observed in either validated date, so this is treated as a bug.
+        raise RuntimeError(
+            f"D+1 cutoff {cutoff_local.isoformat()} falls beyond {next_day}, unsupported"
+        )
+    return list(range(cutoff_local.hour + 1))
+
+
+def ensure_hours_fetched(operator: str, feed: str, svc_date: str, hours, dest_dir: Path) -> None:
+    key = os.environ.get("TRAFIKLAB_KODA_KEY")
+    missing = [h for h in hours if not (dest_dir / f"{h:02d}.7z").exists()]
+    if not missing:
+        return
+    if not key:
+        raise SystemExit(
+            f"Missing {feed} archives for {svc_date} hours {missing} and "
+            "TRAFIKLAB_KODA_KEY is not set."
+        )
+    results = fetch_day(operator, feed, svc_date, key, dest_dir, hours=missing)
+    failed = {h: v for h, v in results.items() if isinstance(v, Exception)}
+    if failed:
+        raise SystemExit(f"Failed to fetch {feed} for {svc_date}: {failed}")
+
+
+def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
+    checks: list[tuple[str, bool]] = []
+
+    n_stop_events = con.execute("SELECT COUNT(*) FROM stop_events").fetchone()[0]
+    n_sched_stop_times = con.execute("SELECT COUNT(*) FROM scheduled_stop_times").fetchone()[0]
+    checks.append(
+        ("stop_events rows == scheduled stop_times rows", n_stop_events == n_sched_stop_times)
+    )
+
+    n_trips = con.execute("SELECT COUNT(*) FROM trips").fetchone()[0]
+    n_sched_trips = con.execute("SELECT COUNT(*) FROM scheduled_trips").fetchone()[0]
+    checks.append(("trips rows == scheduled trips", n_trips == n_sched_trips))
+
+    n_dupe_keys = con.execute(
+        "SELECT COUNT(*) FROM (SELECT trip_id, stop_sequence FROM stop_events "
+        "GROUP BY 1, 2 HAVING COUNT(*) > 1)"
+    ).fetchone()[0]
+    checks.append(("(trip_id, stop_sequence) unique in stop_events", n_dupe_keys == 0))
+
+    n_orphan_trips = con.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT trip_id FROM stop_events) se "
+        "WHERE NOT EXISTS (SELECT 1 FROM trips t WHERE t.trip_id = se.trip_id)"
+    ).fetchone()[0]
+    checks.append(("every stop_events trip exists in trips", n_orphan_trips == 0))
+
+    n_bad_nonfinal = con.execute(
+        "SELECT COUNT(*) FROM stop_events WHERE stop_position != 'final' AND status IS NULL"
+    ).fetchone()[0]
+    checks.append(("every non-final row has a status", n_bad_nonfinal == 0))
+
+    n_bad_final = con.execute(
+        "SELECT COUNT(*) FROM stop_events WHERE stop_position = 'final' AND status IS NOT NULL"
+    ).fetchone()[0]
+    checks.append(("every final row has a null status", n_bad_final == 0))
+
+    n_bad_delay = con.execute(
+        "SELECT COUNT(*) FROM stop_events WHERE (status = 'observed') != (delay_s IS NOT NULL)"
+    ).fetchone()[0]
+    checks.append(("delay_s is non-null exactly when status = observed", n_bad_delay == 0))
+
+    failed = [name for name, ok in checks if not ok]
+    if failed:
+        raise AssertionError(f"Hard checks failed: {failed}")
+    print(f"  All {len(checks)} hard checks passed.")
+
+
+def write_partition(
+    con: duckdb.DuckDBPyConnection, table_sql_name: str, table: str, svc_date: str
+) -> int:
+    out_dir = WAREHOUSE_DIR / table / f"service_date={svc_date}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "part-0.parquet"
+    if out_path.exists():
+        out_path.unlink()
+    con.execute(
+        f"COPY (SELECT * FROM {table_sql_name}) TO '{out_path.as_posix()}' (FORMAT PARQUET)"
+    )
+    return con.execute(f"SELECT COUNT(*) FROM {table_sql_name}").fetchone()[0]
+
+
+def run_transform(svc_date: str) -> dict:
+    svc_date_obj = date.fromisoformat(svc_date)
+    next_day = (svc_date_obj + timedelta(days=1)).isoformat()
+    date_int = int(svc_date.replace("-", ""))
+    date_str_compact = svc_date.replace("-", "")
+    weekday_col = svc_date_obj.strftime("%A").lower()
+
+    log = RunLog(svc_date)
+    print(f"Transforming {OPERATOR}/{FEED} for {svc_date}")
+
+    con = duckdb.connect()
+    con.execute("SET TimeZone='UTC'")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with log.timed_stage("static_schedule_load") as s:
+            static_dir = load_static_gtfs(
+                svc_date,
+                os.environ.get("TRAFIKLAB_KODA_KEY"),
+                Path(tmpdir),
+                extra_files=["calendar.txt", "stops.txt"],
+            )
+            con.execute(
+                render_sql(
+                    "static_schedule.sql",
+                    static_dir=static_dir.as_posix(),
+                    date_int=date_int,
+                    weekday_col=weekday_col,
+                )
+            )
+            n_scheduled = con.execute("SELECT COUNT(*) FROM scheduled_trips").fetchone()[0]
+            s.rows_out = n_scheduled
+            s.message = f"{n_scheduled} trips active on {svc_date}"
+
+        next_day_hours = compute_next_day_cutoff_hours(con, svc_date_obj)
+
+        own_dir = RAW_DIR / OPERATOR / FEED / svc_date
+        ensure_hours_fetched(OPERATOR, FEED, svc_date, list(HOURS), own_dir)
+        if next_day_hours:
+            next_dir = RAW_DIR / OPERATOR / FEED / next_day
+            ensure_hours_fetched(OPERATOR, FEED, next_day, next_day_hours, next_dir)
+
+        own_interim = INTERIM_DIR / svc_date / "own"
+        with log.timed_stage("stage_own_archives") as s:
+            present, missing = stage_date(OPERATOR, FEED, svc_date, own_interim, hours=HOURS)
+            s.rows_out = len(present)
+            s.message = f"{len(present)}/24 own hours staged, missing: {missing or 'none'}"
+
+        next_interim = INTERIM_DIR / svc_date / "next_day"
+        with log.timed_stage("stage_next_day_archives") as s:
+            if next_day_hours:
+                present_n, missing_n = stage_date(
+                    OPERATOR, FEED, next_day, next_interim, hours=next_day_hours
+                )
+                s.rows_out = len(present_n)
+                s.message = f"D+1 hours read: {present_n}, missing: {missing_n or 'none'}"
+            else:
+                s.rows_out = 0
+                s.message = "no D+1 hours needed"
+
+        glob_paths = [own_interim / "*.parquet"]
+        if next_day_hours:
+            glob_paths.append(next_interim / "*.parquet")
+
+        with log.timed_stage("dedup_snapshots") as s:
+            con.execute(render_sql("realtime_dedup.sql", glob_list=duckdb_list_literal(glob_paths)))
+            n_raw = con.execute("SELECT COUNT(*) FROM raw_rows").fetchone()[0]
+            n_dedup = con.execute("SELECT COUNT(*) FROM rows_dedup").fetchone()[0]
+            s.rows_in, s.rows_out = n_raw, n_dedup
+
+        with log.timed_stage("held_values") as s:
+            con.execute(render_sql("held_values.sql", date_str=date_str_compact))
+            n_ignored_prior = con.execute(
+                "SELECT COUNT(DISTINCT trip_id) FROM ignored_prior_day_rows WHERE start_date < ?",
+                [date_str_compact],
+            ).fetchone()[0]
+            n_ignored_next = con.execute(
+                "SELECT COUNT(DISTINCT trip_id) FROM ignored_prior_day_rows WHERE start_date > ?",
+                [date_str_compact],
+            ).fetchone()[0]
+            n_ignored = n_ignored_prior + n_ignored_next
+            n_stops = con.execute("SELECT COUNT(*) FROM stop_last_appearance").fetchone()[0]
+            s.rows_out = n_stops
+            s.message = (
+                f"{n_ignored} distinct trips ignored (start_date != {svc_date}): "
+                f"{n_ignored_prior} prior-day, {n_ignored_next} next-day"
+            )
+
+        con.create_function(
+            "scheduled_time_utc",
+            lambda hms: scheduled_time_utc_py(svc_date_obj, hms) if hms else None,
+            ["VARCHAR"],
+            "BIGINT",
+        )
+
+        with log.timed_stage("build_trips") as s:
+            con.execute(render_sql("trips.sql", svc_date=svc_date))
+            s.rows_in = n_scheduled
+            s.rows_out = con.execute("SELECT COUNT(*) FROM trips").fetchone()[0]
+
+        with log.timed_stage("build_stop_events") as s:
+            con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+            s.rows_in = con.execute("SELECT COUNT(*) FROM scheduled_stop_times").fetchone()[0]
+            s.rows_out = con.execute("SELECT COUNT(*) FROM stop_events").fetchone()[0]
+
+        with log.timed_stage("build_routes_stops") as s:
+            con.execute(render_sql("routes_stops.sql", svc_date=svc_date))
+            s.rows_out = (
+                con.execute("SELECT COUNT(*) FROM routes_out").fetchone()[0]
+                + con.execute("SELECT COUNT(*) FROM stops_out").fetchone()[0]
+            )
+
+        with log.timed_stage("run_hard_checks"):
+            run_hard_checks(con)
+
+        feed_quality_row = build_feed_quality(con, svc_date, own_interim, next_day_hours, log)
+
+        with log.timed_stage("write_partitions") as s:
+            counts = {
+                "trips": write_partition(con, "trips", "trips", svc_date),
+                "stop_events": write_partition(con, "stop_events", "stop_events", svc_date),
+                "routes": write_partition(con, "routes_out", "routes", svc_date),
+                "stops": write_partition(con, "stops_out", "stops", svc_date),
+            }
+            write_feed_quality_partition(feed_quality_row, svc_date)
+            counts["feed_quality"] = 1
+            s.rows_out = sum(counts.values())
+            s.message = str(counts)
+
+    log_path = log.write()
+    print(f"Run log: {log_path}")
+
+    return {
+        "svc_date": svc_date,
+        "next_day_hours": next_day_hours,
+        "n_scheduled_trips": n_scheduled,
+        "n_ignored_prior_day": n_ignored_prior,
+        "n_ignored_next_day": n_ignored_next,
+        "feed_quality": feed_quality_row,
+        "log_entries": log.entries,
+    }
+
+
+def build_feed_quality(
+    con: duckdb.DuckDBPyConnection,
+    svc_date: str,
+    own_interim: Path,
+    next_day_hours: list[int],
+    log: RunLog,
+) -> dict:
+    with log.timed_stage("feed_quality_stats") as s:
+        con.execute(
+            render_sql(
+                "feed_quality_snapshots.sql",
+                own_glob=duckdb_list_literal([own_interim / "*.parquet"]),
+            )
+        )
+        n_archive_files = con.execute("SELECT COUNT(*) FROM all_snapshot_files_own").fetchone()[0]
+        n_distinct = con.execute("SELECT COUNT(*) FROM snapshots_own").fetchone()[0]
+        first_ts, last_ts = con.execute(
+            "SELECT MIN(header_timestamp), MAX(header_timestamp) FROM snapshots_own"
+        ).fetchone()
+        max_gap, gaps_over_300 = con.execute(
+            "SELECT MAX(gap_s), COUNT(*) FILTER (WHERE gap_s > 300) FROM snapshot_gaps_own"
+        ).fetchone()
+        hours_present = {
+            r[0] for r in con.execute("SELECT DISTINCT hour FROM all_snapshot_files_own").fetchall()
+        }
+        hours_without = sorted(set(HOURS) - hours_present)
+
+        s.rows_in = n_archive_files
+        s.rows_out = n_distinct
+        s.message = f"gaps_over_300s={gaps_over_300}"
+
+    return {
+        "service_date": svc_date,
+        "feed": FEED,
+        "archive_files": n_archive_files,
+        "distinct_snapshots": n_distinct,
+        "duplicate_snapshots": n_archive_files - n_distinct,
+        "first_snapshot_utc": (
+            datetime.fromtimestamp(first_ts, tz=UTC).replace(tzinfo=None) if first_ts else None
+        ),
+        "last_snapshot_utc": (
+            datetime.fromtimestamp(last_ts, tz=UTC).replace(tzinfo=None) if last_ts else None
+        ),
+        "max_gap_s": max_gap,
+        "gaps_over_300s": gaps_over_300,
+        "local_hours_without_snapshots": ",".join(f"{h:02d}" for h in hours_without),
+        "next_day_hours_read": ",".join(f"{h:02d}" for h in next_day_hours),
+    }
+
+
+def write_feed_quality_partition(row: dict, svc_date: str) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    out_dir = WAREHOUSE_DIR / "feed_quality" / f"service_date={svc_date}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "part-0.parquet"
+    table = pa.Table.from_pylist([row])
+    pq.write_table(table, out_path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("date", help="Service date to process (YYYY-MM-DD)")
+    args = parser.parse_args()
+
+    result = run_transform(args.date)
+    print(f"\nDone. {result['n_scheduled_trips']} trips scheduled on {args.date}.")
+    print(f"D+1 hours read: {result['next_day_hours'] or 'none'}")
+    print(
+        f"Realtime trips ignored: {result['n_ignored_prior_day']} prior-day, "
+        f"{result['n_ignored_next_day']} next-day"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
