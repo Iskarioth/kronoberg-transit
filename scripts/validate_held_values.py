@@ -297,7 +297,7 @@ def check2_cross_tab(con: duckdb.DuckDBPyConnection, event: str) -> dict:
 
     rows = con.execute(
         f"SELECT {unc_case} AS unc_bucket, {time_case} AS time_bucket, COUNT(*) "
-        f"FROM held_value_rows WHERE {present_field} GROUP BY 1, 2"
+        f"FROM held_value_rows WHERE {present_field} GROUP BY 1, 2 ORDER BY 1, 2"
     ).fetchall()
     total = con.execute(f"SELECT COUNT(*) FROM held_value_rows WHERE {present_field}").fetchone()[0]
 
