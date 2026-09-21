@@ -159,6 +159,19 @@ D-006's hold on transform work.
 - The VehiclePositions check covers one weekday. VehiclePositions is a validation
   source, not part of the pipeline.
 
+**Correction (2026-09-21):** Drop detection in `scripts/koda_scan_lib.py` compared
+stop_ids rather than stop_sequences, which missed some drops on looping trips. After the
+fix, the resolved clean drops are 30,126 (Monday) and 10,661 (Sunday), not 30,025 and
+10,625. In every one of them the predicted departure still falls before the drop window.
+
+**Addendum (2026-09-21):** Stops can leave the feed and come back. On each validated day
+one trip did this (9 stop events on Monday, 2 on Sunday). Every one of those stops dropped
+without the marker and returned with it, carrying a time a median of about 20 minutes
+(Monday) and 13 minutes (Sunday) later than its value before the first drop. The feed
+did not resend an earlier state of the trip: the returned stop list matches no earlier
+snapshot, and the trip-level timestamp moved forward. Taking the value from the last
+appearance, as this decision does, picks the recorded time in every case.
+
 ---
 
 ## D-008 · 2026-09-21 · Punctuality measured at departures; final-stop arrivals excluded
