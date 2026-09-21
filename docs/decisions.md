@@ -80,3 +80,29 @@ proximity unnecessary as a fallback.
 it disappears from `stop_time_update`, rather than looking for a settled/actual value.
 Accuracy is bounded by the polling interval (~14 s in the sample inspected), which is
 small relative to the punctuality thresholds already in `docs/definitions.md`.
+
+**Status:** PROVISIONAL since D-006.
+
+---
+
+## D-006 · 2026-09-21 · D-005 status corrected from FIXED to PROVISIONAL
+
+**Decision:** The observed-time rule from D-005 remains the working default, but its
+status in `definitions.md` is PROVISIONAL, not FIXED. It returns to FIXED only after a
+full-day validation scan of a weekday and a weekend day has been reviewed. Any change
+to the rule itself is logged as its own decision.
+
+**Reason:** D-005 rests on two traced trips (6 and 49 scheduled stops) out of 2,162
+scheduled on 2026-09-07, across about 750 snapshots, roughly three hours at ~14 s
+polling. That sample shows the clean case: one stop dropping off the front of the list
+while the trip continues. It does not cover final stops, where the stop disappears
+because the whole trip leaves the feed. It also does not cover trips that leave the
+feed mid-route, gaps between snapshots, which of `time` and `delay` the feed populates,
+or whether the feed ever marks whole trips `CANCELED`. The Cancelled trips definition
+depends on that last point.
+
+**Consequences:** No transform logic that depends on observed time is built until the
+scan results for both days have been reviewed. The scan is
+`scripts/validate_observed_time.py`, and its reports go in `docs/validation/`. If the
+feed never emits trip-level `CANCELED`, the Cancelled trips definition must be revisited
+before any cancellation rate is published.

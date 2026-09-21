@@ -30,7 +30,7 @@ Status labels:
 
 | Item | Definition | Status |
 |---|---|---|
-| Observed time at a stop | The arrival/departure delay from the last TripUpdates snapshot in which that stop_id still appears in the trip's `stop_time_update` list. Confirmed by inspecting `krono` TripUpdates for 2026-09-07: once a vehicle passes a stop, the feed drops that stop's entry entirely (never retains a frozen value, never marks it `SKIPPED`); one stop drops per real passage event. At ~14s polling, this is accurate to within about one polling interval of actual passage time | FIXED |
+| Observed time at a stop | The arrival/departure delay from the last TripUpdates snapshot in which that stop_id still appears in the trip's `stop_time_update` list. Working default from tracing two `krono` trips (6 and 49 scheduled stops, ~750 snapshots at ~14 s polling) on 2026-09-07, where a passed stop's entry was dropped rather than frozen or marked `SKIPPED`. Not yet validated for final stops, trips that leave the feed mid-route, snapshot gaps, or which of `time`/`delay` the feed populates. See D-006 | PROVISIONAL |
 
 ## Punctuality
 
