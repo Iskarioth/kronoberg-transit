@@ -30,7 +30,7 @@ Status labels:
 
 | Item | Definition | Status |
 |---|---|---|
-| Observed time at a stop | How the observed departure is inferred from TripUpdates predictions. Candidates: (a) last prediction before the vehicle passed the stop, (b) passed-stop values if the feed retains them, (c) VehiclePositions proximity. Decide after inspecting one real day of `krono` data | OPEN |
+| Observed time at a stop | The arrival/departure delay from the last TripUpdates snapshot in which that stop_id still appears in the trip's `stop_time_update` list. Confirmed by inspecting `krono` TripUpdates for 2026-09-07: once a vehicle passes a stop, the feed drops that stop's entry entirely (never retains a frozen value, never marks it `SKIPPED`); one stop drops per real passage event. At ~14s polling, this is accurate to within about one polling interval of actual passage time | FIXED |
 
 ## Punctuality
 

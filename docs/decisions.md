@@ -58,3 +58,25 @@ deterministic.
 
 **Consequences:** The hook only covers commits made locally. It cannot clean PR
 descriptions or commits created by cloud sessions, so the `CLAUDE.md` rule still matters.
+
+---
+
+## D-005 · 2026-09-21 · Observed time = last prediction before the stop drops from the feed
+
+**Decision:** "Observed time at a stop" is defined as the arrival/departure delay from the
+last TripUpdates snapshot in which that stop_id still appears in the trip's
+`stop_time_update` list.
+
+**Reason:** Traced two trips (6 and 49 scheduled stops) across roughly 750 real
+`krono` TripUpdates snapshots for service date 2026-09-07, polled about every 14
+seconds. Once a vehicle passes a stop, KoDa's feed drops that stop's entry entirely -
+it is never retained with a frozen value and never marked `SKIPPED`. Exactly one stop
+drops off the front of the list per real passage event, and the time between drops
+tracks real inter-stop travel time, not the polling interval. This rules out relying on
+retained passed-stop values (the feed doesn't keep them) and makes VehiclePositions
+proximity unnecessary as a fallback.
+
+**Consequences:** Transform logic must capture each stop's last-seen prediction before
+it disappears from `stop_time_update`, rather than looking for a settled/actual value.
+Accuracy is bounded by the polling interval (~14 s in the sample inspected), which is
+small relative to the punctuality thresholds already in `docs/definitions.md`.
