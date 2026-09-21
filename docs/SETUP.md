@@ -260,3 +260,83 @@ Build `src/kronoberg_transit/fetch_koda.py`: a resumable KoDa downloader with at
 requests in flight and 202 polling. Then pull one real day of `krono` TripUpdates and
 inspect how the feed behaves, so Marcus can settle the OPEN "observed time" definition in
 `docs/definitions.md` before any transform logic is written.
+
+---
+
+## Setup results
+
+**Date:** 2026-09-21
+
+**Tool versions:** git 2.54.0.windows.1, GitHub CLI 2.101.0 (installed via winget during
+this run), uv 0.12.5.
+
+### Phase 0 · Preflight
+
+Passed. All three tools reported versions; git identity was already set
+(`user.name`/`user.email` present, unchanged). `~/.claude/settings.json` confirmed
+`attribution.commit` and `attribution.pr` are empty strings, `sessionUrl: false`.
+
+### Phase 1 · Local repository
+
+Passed. `uv init --package` did not overwrite any existing file (verified by hash diff
+before/after). Repo initialized on `main`, `core.hooksPath` set. `.githooks/commit-msg`
+staged with mode `100755`. Hook tested with a throwaway commit containing a
+`Co-Authored-By: Claude` trailer — the hook stripped it. `git log --format=%B` is clean
+of attribution across all commits.
+
+### Phase 2 · GitHub
+
+Passed. Repo created and pushed: https://github.com/Iskarioth/kronoberg-transit
+(public, HTTPS auth). Topics added. `origin/main` matched local `main`.
+
+### Phase 3 · Trafiklab
+
+Passed. KoDa check succeeded for `krono` (service date 2026-09-07, hour 08 TripUpdates).
+Realtime smoke check returned 61 entities (the live feed required an
+`Accept-Encoding: gzip, deflate` header, missing from the initial script — fixed).
+Historical static smoke check (KoDa, service date **2026-09-07**): **2,162 trips
+scheduled**, **49,204 `stop_times` rows** — recorded in D-001, replacing the earlier
+30,000-60,000/day estimate, confirmed with Marcus before updating.
+
+### Phase 4 · Hugging Face
+
+Passed. KoDa license confirmed as CC0 1.0 (same as GTFS Regional), confirmed with
+Marcus. Dataset repo created:
+https://huggingface.co/datasets/Traumenteize/kronoberg-transit-punctuality, with a
+README card (license, tags, source attribution, status "work in progress"). A bug in
+the initial card (GitHub link used the wrong owner) was caught and fixed before
+Marcus saw it.
+
+### Phase 5 · Google Sheets
+
+Passed. Locale set to `en_US`, time zone `Europe/Stockholm`. All five tabs created with
+correct headers, row 1 frozen: `route_daily`, `stop_hotspots`, `hour_of_day`,
+`data_quality`, `run_log`. Default `Sheet1` tab deleted. Idempotency verified on a
+second run. One data-entry issue was caught and fixed along the way: `GOOGLE_SHEET_ID`
+initially held extra URL text instead of the bare ID.
+
+### Phase 6 · GitHub Actions secrets and smoke workflow
+
+Passed. Five secrets and two variables set (names only, no values recorded here).
+`smoke.yml` workflow added and run manually via `gh workflow run`; it passed in 12s
+(checkout, setup-uv, `uv sync --frozen`, KoDa check, Sheets `--ping`). One bug was
+caught and fixed: two Trafiklab keys had trailing whitespace in `.env` that broke the
+KoDa request URL when passed to GitHub as a secret (local runs were unaffected because
+`uv run --env-file` trims it) — both secrets were re-set clean.
+
+### Phase 7 · Connect the Claude Project
+
+Handled by Marcus outside this session: folder-level project knowledge sync wasn't
+available, so he connected a filesystem MCP server with repo access instead and will
+verify the Project can read the Sheet directly.
+
+### Definition of done
+
+- [x] Public repo on GitHub, `main` pushed, hook active and tested
+- [x] No attribution in any commit message (`git log --format=%B` is clean)
+- [x] KoDa check passes for `krono`
+- [x] Realtime smoke check passes; trip and stop-time counts recorded in D-001
+- [x] Hugging Face dataset repo exists with a card and a confirmed license
+- [x] Google Sheet has five tabs with headers, locale `en_US`
+- [x] Actions secrets and variables set; smoke workflow green
+- [x] `docs/SETUP.md` records the results
