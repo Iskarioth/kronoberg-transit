@@ -158,3 +158,36 @@ D-006's hold on transform work.
   the operator's system. The alert level is OPEN.
 - The VehiclePositions check covers one weekday. VehiclePositions is a validation
   source, not part of the pipeline.
+
+---
+
+## D-008 · 2026-09-21 · Punctuality measured at departures; final-stop arrivals excluded
+
+**Decision:** Punctuality is measured at the departure time of every stop except a
+trip's final stop. Final-stop arrivals are excluded from punctuality and from coverage.
+The Measurement point moves from PROVISIONAL to FIXED.
+
+**Reason:** From the same scans as D-007:
+
+- The feed rarely records final arrivals. Completed trips are removed from the feed a
+  median 10 s (Monday) and 9 s (Sunday) after their final arrival time, while the
+  recorded-time marker takes a median 15 s to appear. About 70% of final-stop held
+  values carry no marker on both days, and 22.1% (Monday) and 20.4% (Sunday) of trips
+  are removed before their final arrival time is reached. Under D-007 most final stops
+  would be unobserved.
+- An early arrival at the end of a trip does not make anyone miss a bus. Of 1,902
+  final-stop arrivals on Monday, 41.5% were early by the held value and 43.6% by GPS.
+  Counting them as not on time would lower punctuality for something that is not a
+  service failure for passengers. Early departures still count as not on time at
+  every other stop.
+- With final stops excluded, held values without the marker are rare: 247 on Monday
+  and 18 on Sunday, about 0.6% and 0.1% of held values at non-final stops.
+
+**Consequences:**
+
+- Coverage uses the same set: scheduled departures at non-final stops.
+- Arrival punctuality at the end of a trip is out of scope. It matters most for
+  transfers at hubs, where a late arrival can cost a connection. The write-up lists
+  this as a limitation.
+- The transform still extracts final-stop events with their marker flag, so this
+  choice can be revisited without refetching.

@@ -37,7 +37,7 @@ Status labels:
 | Item | Definition | Status |
 |---|---|---|
 | Delay | Observed time minus scheduled time, in seconds. Positive means late | FIXED |
-| Measurement point | Departure time at every stop, except the final stop of a trip, which uses arrival | PROVISIONAL |
+| Measurement point | Departure time at every stop except the final stop of a trip. Final-stop arrivals are excluded from punctuality and from coverage (D-008) | FIXED |
 | On time | −60 s ≤ delay ≤ +180 s | PROVISIONAL |
 | Early | Delay < −60 s. Early departures count as **not on time**: a bus leaving early strands passengers, which is worse than a late bus | PROVISIONAL |
 | Late | Delay > +180 s | PROVISIONAL |
@@ -49,7 +49,7 @@ Status labels:
 |---|---|---|
 | Cancelled trips | Trips with `schedule_relationship = CANCELED` are excluded from punctuality and reported separately as a cancellation rate | FIXED |
 | Unobserved stop events | Scheduled stop events with no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007), are labelled `unobserved`. They are **never** counted as on time and never silently dropped | FIXED |
-| Coverage | Observed stop events ÷ scheduled stop events, per route and day. Reported alongside every punctuality figure | FIXED |
+| Coverage | Observed stop events ÷ scheduled stop events at the measurement point (final stops excluded, D-008), per route and day. Reported alongside every punctuality figure | FIXED |
 | Minimum coverage | Below which a route-day is flagged as unreliable in reporting | OPEN |
 | Added trips | Trips in realtime with no matching scheduled trip: counted and logged, excluded from punctuality | PROVISIONAL |
 | Recorded-time marker share | Stop events at the measurement point whose held value carries `uncertainty = 0`, divided by stop events at the measurement point with a held value, per service day. Reported in data_quality. A drop signals a change in the operator's system | FIXED |
