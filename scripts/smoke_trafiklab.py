@@ -26,6 +26,7 @@ import gzip
 import io
 import os
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -135,10 +136,11 @@ def extract_gtfs_text_files(body: bytes, names: list[str]) -> dict[str, str]:
     elif body[:6] == SEVEN_ZIP_MAGIC:
         import py7zr
 
-        with py7zr.SevenZipFile(io.BytesIO(body), mode="r") as archive:
-            extracted = archive.read(targets=names)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with py7zr.SevenZipFile(io.BytesIO(body), mode="r") as archive:
+                archive.extract(path=tmpdir, targets=names)
             for name in names:
-                out[name] = extracted[name].read().decode("utf-8-sig")
+                out[name] = (Path(tmpdir) / name).read_text(encoding="utf-8-sig")
     else:
         raise RuntimeError(f"Unrecognized archive format (first bytes: {body[:8]!r})")
     return out
