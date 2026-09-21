@@ -10,6 +10,7 @@ run can be resumed by re-running the same command.
 Usage:
     uv run --env-file .env python -m kronoberg_transit.fetch_koda 2026-09-07
     uv run --env-file .env python -m kronoberg_transit.fetch_koda 2026-09-07 --feed VehiclePositions
+    uv run --env-file .env python -m kronoberg_transit.fetch_koda 2026-09-08 --hours 0-3
 """
 
 import argparse
@@ -94,10 +95,13 @@ def fetch_day(
     key: str,
     dest_dir: Path,
     max_in_flight: int = MAX_IN_FLIGHT,
+    hours=HOURS,
 ) -> dict[int, Path | Exception]:
-    """Fetch all 24 hourly archives for a service date into dest_dir.
+    """Fetch the requested hourly archives (default all 24) for a service date
+    into dest_dir.
 
-    Resumable: hours already present in dest_dir are skipped. Returns a
+    Resumable: hours already present in dest_dir are skipped. At most
+    max_in_flight requests run concurrently (CLAUDE.md rule 4). Returns a
     {hour: path_or_exception} map so the caller can report partial failures
     without losing the hours that did succeed.
     """
@@ -105,7 +109,7 @@ def fetch_day(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_in_flight) as pool:
         futures = {
             pool.submit(fetch_hour, operator, feed, date, hour, key, dest_dir): hour
-            for hour in HOURS
+            for hour in hours
         }
         for future in concurrent.futures.as_completed(futures):
             hour = futures[future]
@@ -114,6 +118,28 @@ def fetch_day(
             except Exception as e:  # noqa: BLE001 - one hour's failure must not abort the batch
                 results[hour] = e
     return results
+
+
+def parse_hours(spec: str) -> list[int]:
+    """Parse a comma-separated hour spec, e.g. "3", "0,4,7" or "0-3,5,7-9",
+    into a sorted list of distinct hours (0-23)."""
+    hours: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            start, end = int(start_s), int(end_s)
+            if start > end:
+                raise ValueError(f"Invalid hour range {part!r}: start must not exceed end")
+            hours.update(range(start, end + 1))
+        else:
+            hours.add(int(part))
+    for h in hours:
+        if not 0 <= h <= 23:
+            raise ValueError(f"Hour {h} out of range 0-23")
+    return sorted(hours)
 
 
 def main() -> int:
@@ -126,21 +152,31 @@ def main() -> int:
         choices=["TripUpdates", "ServiceAlerts", "VehiclePositions"],
     )
     parser.add_argument("--out", default="data/raw/koda", help="Base output directory")
+    parser.add_argument(
+        "--hours",
+        default=None,
+        help="Subset of hours to fetch, e.g. '3', '0,4,7' or '0-3,5,7-9' (default: all 24)",
+    )
     args = parser.parse_args()
 
     key = os.environ.get("TRAFIKLAB_KODA_KEY")
     if not key:
         sys.exit("Set TRAFIKLAB_KODA_KEY in your environment first.")
 
-    dest_dir = Path(args.out) / args.operator / args.feed / args.date
-    print(f"Fetching {args.operator}/{args.feed} for {args.date} into {dest_dir}")
+    hours = list(HOURS) if args.hours is None else parse_hours(args.hours)
 
-    results = fetch_day(args.operator, args.feed, args.date, key, dest_dir)
+    dest_dir = Path(args.out) / args.operator / args.feed / args.date
+    print(
+        f"Fetching {args.operator}/{args.feed} for {args.date} "
+        f"(hours {hours[0]:02d}-{hours[-1]:02d}) into {dest_dir}"
+    )
+
+    results = fetch_day(args.operator, args.feed, args.date, key, dest_dir, hours=hours)
 
     ok_hours = sorted(h for h, v in results.items() if isinstance(v, Path))
     failed_hours = sorted(h for h, v in results.items() if isinstance(v, Exception))
 
-    print(f"\n{len(ok_hours)}/24 hours fetched OK, {len(failed_hours)} failed")
+    print(f"\n{len(ok_hours)}/{len(hours)} hours fetched OK, {len(failed_hours)} failed")
     for h in failed_hours:
         print(f"  hour {h:02d}: {results[h]}")
 

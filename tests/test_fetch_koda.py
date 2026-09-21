@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kronoberg_transit.fetch_koda import FetchError, fetch_day, fetch_hour
+from kronoberg_transit.fetch_koda import FetchError, fetch_day, fetch_hour, parse_hours
 
 SEVEN_ZIP_MAGIC = b"\x37\x7a\xbc\xaf\x27\x1c"
 
@@ -108,3 +108,45 @@ def test_fetch_day_reports_partial_failure(tmp_path):
     assert all(hasattr(v, "read_bytes") or isinstance(v, FetchError) for v in results.values())
     ok_hours = [h for h, v in results.items() if not isinstance(v, Exception)]
     assert len(ok_hours) == 23
+
+
+def test_fetch_day_fetches_only_requested_hours(tmp_path):
+    body = SEVEN_ZIP_MAGIC + b"archive contents"
+    requested_urls = []
+
+    def fake_urlopen(req, timeout=None):
+        requested_urls.append(req.full_url)
+        return FakeResponse(body)
+
+    with patch("kronoberg_transit.fetch_koda.urllib.request.urlopen", side_effect=fake_urlopen):
+        results = fetch_day(
+            "krono", "TripUpdates", "2026-09-08", "key", tmp_path, hours=[0, 1, 2, 3]
+        )
+
+    assert set(results) == {0, 1, 2, 3}
+    assert len(requested_urls) == 4
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("3", [3]),
+        ("0,4,7", [0, 4, 7]),
+        ("0-3", [0, 1, 2, 3]),
+        ("0-3,5,7-9", [0, 1, 2, 3, 5, 7, 8, 9]),
+        (" 1 , 2 ", [1, 2]),
+        ("5,2,5", [2, 5]),
+    ],
+)
+def test_parse_hours(spec, expected):
+    assert parse_hours(spec) == expected
+
+
+def test_parse_hours_rejects_out_of_range():
+    with pytest.raises(ValueError, match="out of range"):
+        parse_hours("24")
+
+
+def test_parse_hours_rejects_backwards_range():
+    with pytest.raises(ValueError, match="start must not exceed end"):
+        parse_hours("5-2")
