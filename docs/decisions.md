@@ -164,13 +164,17 @@ stop_ids rather than stop_sequences, which missed some drops on looping trips. A
 fix, the resolved clean drops are 30,126 (Monday) and 10,661 (Sunday), not 30,025 and
 10,625. In every one of them the predicted departure still falls before the drop window.
 
-**Addendum (2026-09-21):** Stops can leave the feed and come back. On each validated day
-one trip did this (9 stop events on Monday, 2 on Sunday). Every one of those stops dropped
-without the marker and returned with it, carrying a time a median of about 20 minutes
-(Monday) and 13 minutes (Sunday) later than its value before the first drop. The feed
-did not resend an earlier state of the trip: the returned stop list matches no earlier
-snapshot, and the trip-level timestamp moved forward. Taking the value from the last
-appearance, as this decision does, picks the recorded time in every case.
+**Addendum (2026-09-21):** Stops can leave the feed and come back. On Monday this
+happened on two trips (9 stop events: 8 on one trip, which returned together in a
+single snapshot, and 1 on another, absent for about one snapshot). On Sunday it
+happened on one trip (2 stop events). Every one of those stops left without the marker
+and returned with it, carrying a time a median of about 20 minutes (Monday) and 13
+minutes (Sunday) later than its value before it left. For the trips whose stops
+returned together, the feed did not resend an earlier state: the returned stop list
+matches no earlier snapshot, and the trip-level timestamp moved forward. On Monday,
+every returned value is within 9 s of the GPS-based departure, while the values from
+before the stops left are 153 s to 1,249 s earlier than GPS. Taking the value from the
+last appearance, as this decision does, picks the recorded time in every case.
 
 ---
 
