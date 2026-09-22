@@ -1,16 +1,37 @@
--- data_quality (D-017): one row per service date. Snapshot/outage figures
+-- data_quality (D-017): one row per service date. Snapshot figures
 -- (distinct/duplicate snapshots, first/last snapshot, local_hours_without_
 -- snapshots, out_of_scope_trips_in_feed) come from feed_quality (D's own
--- archives only, unchanged by D-016). max_gap_s, largest_gap_start/end_local
--- and outages come from feed_gaps instead (D's own hours plus any D+1 hours
--- read, per D-016), since that is what actually bounds an outage. Requires
--- aggregate_base.sql to have run first.
+-- archives only, unchanged by D-016). The outage columns (longest_outage_s,
+-- longest_outage_start/end_local, outages, outage_minutes_06_22) come from
+-- feed_gaps (D-016) *clipped to D's own local day* (00:00-24:00 local): a
+-- feed_gaps window can extend into the D+1 hours read for D-011, which would
+-- otherwise attribute part of tomorrow's gap to today. feed_gaps itself and
+-- trips.no_data_in_outage are untouched - the D+1 window is right for judging
+-- D's trips. Requires aggregate_base.sql to have run first.
+
+CREATE OR REPLACE TABLE day_bounds AS
+SELECT service_date,
+       ((service_date + INTERVAL 0 HOUR) AT TIME ZONE 'Europe/Stockholm') AT TIME ZONE 'UTC' AS day_start_utc,
+       ((service_date + INTERVAL 24 HOUR) AT TIME ZONE 'Europe/Stockholm') AT TIME ZONE 'UTC' AS day_end_utc
+FROM service_dates;
+
+-- feed_gaps windows clipped to [day_start_utc, day_end_utc); a window that
+-- falls entirely outside D's own day (e.g. an after_last gap that starts
+-- after D+1's midnight) clips to zero-or-negative length and is dropped.
+CREATE OR REPLACE TABLE feed_gaps_clipped AS
+SELECT fg.service_date,
+       GREATEST(fg.gap_start_utc, db.day_start_utc) AS gap_start_utc,
+       LEAST(fg.gap_end_utc, db.day_end_utc) AS gap_end_utc,
+       date_diff('second', GREATEST(fg.gap_start_utc, db.day_start_utc), LEAST(fg.gap_end_utc, db.day_end_utc)) AS gap_s
+FROM all_feed_gaps fg
+JOIN day_bounds db ON db.service_date = fg.service_date
+WHERE GREATEST(fg.gap_start_utc, db.day_start_utc) < LEAST(fg.gap_end_utc, db.day_end_utc);
 
 CREATE OR REPLACE TABLE gap_agg AS
 SELECT service_date,
        COUNT(*) AS outages,
-       MAX(gap_s) AS max_gap_s
-FROM all_feed_gaps
+       MAX(gap_s) AS longest_outage_s
+FROM feed_gaps_clipped
 GROUP BY service_date;
 
 CREATE OR REPLACE TABLE largest_gap AS
@@ -18,11 +39,11 @@ SELECT service_date, gap_start_utc, gap_end_utc
 FROM (
     SELECT service_date, gap_start_utc, gap_end_utc,
            ROW_NUMBER() OVER (PARTITION BY service_date ORDER BY gap_s DESC) AS rn
-    FROM all_feed_gaps
+    FROM feed_gaps_clipped
 ) WHERE rn = 1;
 
--- Overlap, in minutes, between each date's feed_gaps windows and that same
--- date's local 06:00-22:00 window.
+-- Overlap, in minutes, between each date's clipped feed_gaps windows and
+-- that same date's local 06:00-22:00 window.
 CREATE OR REPLACE TABLE outage_minutes_06_22_agg AS
 WITH day_window AS (
     SELECT service_date,
@@ -35,7 +56,7 @@ SELECT fg.service_date,
            GREATEST(fg.gap_start_utc, dw.window_start_utc),
            LEAST(fg.gap_end_utc, dw.window_end_utc)
        ))) / 60.0 AS outage_minutes_06_22
-FROM all_feed_gaps fg
+FROM feed_gaps_clipped fg
 JOIN day_window dw ON dw.service_date = fg.service_date
 GROUP BY fg.service_date;
 
@@ -70,9 +91,9 @@ SELECT
     fq.distinct_snapshots, fq.duplicate_snapshots,
     strftime(fq.first_snapshot_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS first_snapshot_local,
     strftime(fq.last_snapshot_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS last_snapshot_local,
-    ga.max_gap_s,
-    strftime(lg.gap_start_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS largest_gap_start_local,
-    strftime(lg.gap_end_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS largest_gap_end_local,
+    ga.longest_outage_s,
+    strftime(lg.gap_start_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS longest_outage_start_local,
+    strftime(lg.gap_end_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Stockholm', '%Y-%m-%dT%H:%M:%S') AS longest_outage_end_local,
     ga.outages,
     ROUND(COALESCE(om.outage_minutes_06_22, 0), 2) AS outage_minutes_06_22,
     fq.local_hours_without_snapshots,

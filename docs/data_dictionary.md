@@ -131,8 +131,12 @@ each stop event's scheduled departure (D-017's Hour of day).
 ### `data_quality`
 
 One row per service date. Snapshot-count columns come from `feed_quality` (D's own
-archives only, D-012); the gap columns come from `feed_gaps` instead (D's own hours plus
-any D+1 hours read, D-016), since that is what actually bounds an outage.
+archives only, D-012). The outage columns describe outages (D-016) within D's own local
+day only (00:00-24:00 local): each `feed_gaps` window is clipped to that range before
+these columns are computed, since a `feed_gaps` window can extend into the D+1 hours
+read for D-011, which would otherwise attribute part of tomorrow's gap to today.
+`feed_gaps` itself and `trips.no_data_in_outage` are unaffected by this clipping - the
+D+1 window is the right one for judging D's trips.
 
 | Column | Type | Description |
 |---|---|---|
@@ -142,10 +146,10 @@ any D+1 hours read, D-016), since that is what actually bounds an outage.
 | duplicate_snapshots | integer | `feed_quality.duplicate_snapshots` |
 | first_snapshot_local | string | `feed_quality.first_snapshot_utc`, converted |
 | last_snapshot_local | string | `feed_quality.last_snapshot_utc`, converted |
-| max_gap_s | integer | Largest `feed_gaps.gap_s` that day |
-| largest_gap_start_local, largest_gap_end_local | string | That gap's window, converted |
-| outages | integer | Count of that day's `feed_gaps` rows |
-| outage_minutes_06_22 | float | Minutes of outage overlapping 06:00-22:00 local, summed across that day's gaps |
+| longest_outage_s | integer | Largest `feed_gaps.gap_s` within D's own local day, after clipping |
+| longest_outage_start_local, longest_outage_end_local | string | That clipped gap's window, converted |
+| outages | integer | Count of `feed_gaps` windows that overlap D's own local day, after clipping |
+| outage_minutes_06_22 | float | Minutes of clipped outage overlapping 06:00-22:00 local, summed across that day's clipped gaps |
 | local_hours_without_snapshots | string | `feed_quality.local_hours_without_snapshots` |
 | marker_share | float, nullable | Recorded-time marker share, all non-final stop events with a held value (definitions.md) |
 | out_of_scope_trips_in_feed | integer | `feed_quality.out_of_scope_trips_in_feed` (D-013) |

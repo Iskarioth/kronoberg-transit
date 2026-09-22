@@ -163,20 +163,48 @@ def write_csv(con: duckdb.DuckDBPyConnection, table: str, out_dir: Path) -> int:
     return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
 
-def _cell(v):
+# Sheets reinterprets values under USER_ENTERED: a 16-digit ID like route_id
+# becomes a rounded float in scientific notation, and a comma-joined list
+# like "144,145,146" becomes one number with thousands separators. Every tab
+# is written RAW instead, with each column's Python type chosen by its
+# DuckDB type: BOOLEAN -> bool, VARCHAR/DATE/TIMESTAMP -> str (IDs, labels,
+# lists, dates and timestamps are all text), everything else (counts,
+# shares) -> the native number DuckDB already returns.
+def _column_kinds(con: duckdb.DuckDBPyConnection, table: str) -> dict[str, str]:
+    kinds = {}
+    for name, col_type, *_ in con.execute(f"DESCRIBE {table}").fetchall():
+        if col_type == "BOOLEAN":
+            kinds[name] = "bool"
+        elif col_type in ("VARCHAR", "DATE", "TIMESTAMP"):
+            kinds[name] = "text"
+        else:
+            kinds[name] = "number"
+    return kinds
+
+
+def _cell(v, kind: str):
     if v is None:
         return ""
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (dt.date, dt.datetime)):
-        return v.isoformat()
+    if kind == "bool":
+        return bool(v)
+    if kind == "text":
+        if isinstance(v, (dt.date, dt.datetime)):
+            return v.isoformat()
+        return str(v)
     return v
 
 
-def write_sheet_tab(sh: gspread.Spreadsheet, con: duckdb.DuckDBPyConnection, table: str) -> int:
+def _table_values(con: duckdb.DuckDBPyConnection, table: str) -> tuple[list[str], list[list]]:
+    kinds = _column_kinds(con, table)
     cols = [d[0] for d in con.execute(f"SELECT * FROM {table} LIMIT 0").description]
     rows = con.execute(f"SELECT * FROM {table}").fetchall()
-    values = [cols] + [[_cell(v) for v in row] for row in rows]
+    values = [[_cell(v, kinds[c]) for v, c in zip(row, cols, strict=True)] for row in rows]
+    return cols, values
+
+
+def write_sheet_tab(sh: gspread.Spreadsheet, con: duckdb.DuckDBPyConnection, table: str) -> int:
+    cols, rows = _table_values(con, table)
+    values = [cols] + rows
 
     need_rows, need_cols = max(len(values), 2), max(len(cols), 1)
     existing = {ws.title: ws for ws in sh.worksheets()}
@@ -187,9 +215,35 @@ def write_sheet_tab(sh: gspread.Spreadsheet, con: duckdb.DuckDBPyConnection, tab
             ws.resize(rows=max(ws.row_count, need_rows), cols=max(ws.col_count, need_cols))
     else:
         ws = sh.add_worksheet(title=table, rows=need_rows, cols=need_cols)
-    ws.update(values=values, range_name="A1", value_input_option="USER_ENTERED")
+    ws.update(values=values, range_name="A1", value_input_option="RAW")
     ws.freeze(rows=1)
     return len(rows)
+
+
+def verify_sheet_tab(sh: gspread.Spreadsheet, con: duckdb.DuckDBPyConnection, table: str) -> None:
+    """Read the tab back and compare row count and every text/ID column
+    exactly against what was just written. Raises on any difference."""
+    kinds = _column_kinds(con, table)
+    cols, rows = _table_values(con, table)
+    text_idxs = [i for i, c in enumerate(cols) if kinds[c] == "text"]
+
+    ws = sh.worksheet(table)
+    read_back = ws.get_all_values()
+
+    if len(read_back) != len(rows) + 1:
+        raise AssertionError(
+            f"{table}: read-back row count {len(read_back) - 1} != written {len(rows)}"
+        )
+    if read_back[0] != cols:
+        raise AssertionError(f"{table}: read-back header {read_back[0]} != written {cols}")
+
+    for i, (written_row, read_row) in enumerate(zip(rows, read_back[1:], strict=True)):
+        expected = [str(written_row[j]) for j in text_idxs]
+        actual = [read_row[j] for j in text_idxs]
+        if expected != actual:
+            raise AssertionError(
+                f"{table}: row {i} text/ID mismatch: wrote {expected}, read back {actual}"
+            )
 
 
 def delete_retired_tabs(sh: gspread.Spreadsheet) -> list[str]:
@@ -206,7 +260,7 @@ def append_run_log(sh: gspread.Spreadsheet, rows_out: int, duration_s: float, me
     ws = sh.worksheet("run_log")
     now = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     row = [now, "aggregate", "", "aggregate", "ok", "", rows_out, round(duration_s, 3), message]
-    ws.append_row(row, value_input_option="USER_ENTERED")
+    ws.append_row(row, value_input_option="RAW")
 
 
 def main() -> int:
@@ -231,7 +285,11 @@ def main() -> int:
         return 0
 
     sh = get_sheet()
-    counts = {t: write_sheet_tab(sh, con, t) for t in TABS}
+    counts = {}
+    for t in TABS:
+        counts[t] = write_sheet_tab(sh, con, t)
+        verify_sheet_tab(sh, con, t)
+    print(f"  Read-back check passed for all {len(TABS)} tabs.")
     deleted = delete_retired_tabs(sh)
     duration = time.monotonic() - t0
     message = f"tabs rebuilt: {counts}; retired tabs deleted: {deleted}"
