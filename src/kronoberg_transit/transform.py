@@ -156,6 +156,15 @@ def ensure_hours_fetched(operator: str, feed: str, svc_date: str, hours, dest_di
         raise SystemExit(f"Failed to fetch {feed} for {svc_date}: {failed}")
 
 
+def check_single_operator_per_trip(con: duckdb.DuckDBPyConnection) -> None:
+    """D-013: a trip's operator must be unambiguous. Fail the run rather than
+    silently pick one of several is_operator=1 rows."""
+    bad = con.execute("SELECT trip_id FROM trip_scope WHERE n_operator_rows > 1").fetchall()
+    if bad:
+        trip_ids = [r[0] for r in bad]
+        raise AssertionError(f"Trips with more than one is_operator=1 attribution row: {trip_ids}")
+
+
 def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
     checks: list[tuple[str, bool]] = []
 
@@ -196,6 +205,31 @@ def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
     ).fetchone()[0]
     checks.append(("delay_s is non-null exactly when status = observed", n_bad_delay == 0))
 
+    n_bad_scope = con.execute(
+        "SELECT COUNT(*) FROM trips WHERE in_scope = (trip_status = 'out_of_scope')"
+    ).fetchone()[0]
+    checks.append(
+        ("trips.in_scope is false exactly when trip_status = out_of_scope", n_bad_scope == 0)
+    )
+
+    n_scope_mismatch = con.execute(
+        "SELECT COUNT(*) FROM stop_events se JOIN trips t ON t.trip_id = se.trip_id "
+        "WHERE se.in_scope != t.in_scope"
+    ).fetchone()[0]
+    checks.append(("stop_events.in_scope matches trips.in_scope", n_scope_mismatch == 0))
+
+    n_bad_out_of_scope_status = con.execute(
+        "SELECT COUNT(*) FROM stop_events se JOIN trips t ON t.trip_id = se.trip_id "
+        "WHERE t.trip_status = 'out_of_scope' AND se.stop_position != 'final' "
+        "AND se.status != 'out_of_scope'"
+    ).fetchone()[0]
+    checks.append(
+        (
+            "every non-final stop event of an out-of-scope trip has status out_of_scope",
+            n_bad_out_of_scope_status == 0,
+        )
+    )
+
     failed = [name for name, ok in checks if not ok]
     if failed:
         raise AssertionError(f"Hard checks failed: {failed}")
@@ -235,7 +269,7 @@ def run_transform(svc_date: str) -> dict:
                 svc_date,
                 os.environ.get("TRAFIKLAB_KODA_KEY"),
                 Path(tmpdir),
-                extra_files=["calendar.txt", "stops.txt"],
+                extra_files=["calendar.txt", "stops.txt", "agency.txt", "attributions.txt"],
             )
             con.execute(
                 render_sql(
@@ -246,6 +280,7 @@ def run_transform(svc_date: str) -> dict:
                 )
             )
             n_scheduled = con.execute("SELECT COUNT(*) FROM scheduled_trips").fetchone()[0]
+            check_single_operator_per_trip(con)
             s.rows_out = n_scheduled
             s.message = f"{n_scheduled} trips active on {svc_date}"
 
@@ -385,9 +420,15 @@ def build_feed_quality(
         }
         hours_without = sorted(set(HOURS) - hours_present)
 
+        n_out_of_scope_in_feed = con.execute(
+            "SELECT COUNT(*) FROM trips WHERE trip_status = 'out_of_scope' AND first_seen_utc IS NOT NULL"
+        ).fetchone()[0]
+
         s.rows_in = n_archive_files
         s.rows_out = n_distinct
-        s.message = f"gaps_over_300s={gaps_over_300}"
+        s.message = (
+            f"gaps_over_300s={gaps_over_300} out_of_scope_trips_in_feed={n_out_of_scope_in_feed}"
+        )
 
     return {
         "service_date": svc_date,
@@ -395,6 +436,7 @@ def build_feed_quality(
         "archive_files": n_archive_files,
         "distinct_snapshots": n_distinct,
         "duplicate_snapshots": n_archive_files - n_distinct,
+        "out_of_scope_trips_in_feed": n_out_of_scope_in_feed,
         "first_snapshot_utc": (
             datetime.fromtimestamp(first_ts, tz=UTC).replace(tzinfo=None) if first_ts else None
         ),

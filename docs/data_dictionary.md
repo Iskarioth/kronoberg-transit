@@ -84,7 +84,9 @@ partitioned by `service_date`, one file per date:
 `data/warehouse/<table>/service_date=YYYY-MM-DD/part-0.parquet`. Re-running a date
 overwrites that date's partition; it never duplicates rows. All timestamps are naive
 `TIMESTAMP` columns holding UTC instants (no timezone-aware type), per CLAUDE.md's
-"store timestamps in UTC" rule.
+"store timestamps in UTC" rule. `agency.txt` and `attributions.txt` are read from the
+same-date static schedule alongside the other GTFS files, to determine trip scope
+(D-013).
 
 ### `trips`
 
@@ -100,9 +102,11 @@ same-date static schedule).
 | scheduled_first_departure_utc | timestamp | Static schedule's first-stop departure, converted to UTC |
 | scheduled_last_arrival_utc | timestamp | Static schedule's final-stop arrival, converted to UTC |
 | scheduled_stops | int | Count of this trip's `stop_times` rows |
-| trip_status | string | `in_feed` \| `cancelled` \| `no_realtime_data` (D-009, D-010) |
-| first_seen_utc | timestamp, nullable | Earliest TripUpdates snapshot in which the trip appeared, matched on `trip_id` + `start_date` = this service date (D-011). Null if `no_realtime_data` |
-| last_seen_utc | timestamp, nullable | Latest such snapshot. Null if `no_realtime_data` |
+| operator | string, nullable | `organization_name` of this trip's `is_operator = 1` row in `attributions.txt`. Null if the trip has no attribution row (D-013) |
+| in_scope | bool | False when `operator` matches another agency in `agency.txt` (any agency other than Länstrafiken Kronoberg). True otherwise, including when `operator` is null (D-013) |
+| trip_status | string | `out_of_scope` \| `in_feed` \| `cancelled` \| `no_realtime_data`, checked in that order (D-009, D-010, D-013) |
+| first_seen_utc | timestamp, nullable | Earliest TripUpdates snapshot in which the trip appeared, matched on `trip_id` + `start_date` = this service date (D-011). Null if the trip never appeared in TripUpdates, regardless of scope |
+| last_seen_utc | timestamp, nullable | Latest such snapshot. Null if the trip never appeared in TripUpdates, regardless of scope |
 
 ### `stop_events`
 
@@ -125,7 +129,8 @@ stop_sequence)` - never `stop_id` alone, which can repeat on a looping trip.
 | departure_marker | bool, nullable | Whether that departure value carried `uncertainty = 0`. Null if `held_departure_utc` is null |
 | last_stop_relationship | string, nullable | This stop's `schedule_relationship` (e.g. `SCHEDULED`, `SKIPPED`) at that same last snapshot. Null if never observed |
 | last_seen_utc | timestamp, nullable | Header timestamp of that last snapshot. Null if never observed |
-| status | string, nullable | `cancelled` \| `skipped` \| `observed` \| `unobserved`, checked in that order (D-009). Null for `stop_position = final` (D-008) |
+| in_scope | bool | Copied from this row's trip (`trips.in_scope`, D-013) |
+| status | string, nullable | `out_of_scope` \| `cancelled` \| `skipped` \| `observed` \| `unobserved`, checked in that order (D-013, D-009). Null for `stop_position = final` (D-008) |
 | delay_s | int, nullable | `held_departure_utc - scheduled_departure_utc` in seconds. Set only when `status = observed`; null otherwise, including for final stops |
 
 ### `routes`
@@ -167,6 +172,7 @@ only (not the extra D+1 hours read per D-011).
 | archive_files | int | Total snapshot files across the date's own 24 hourly archives, including duplicates |
 | distinct_snapshots | int | Distinct feed header timestamps after deduplication |
 | duplicate_snapshots | int | `archive_files - distinct_snapshots` |
+| out_of_scope_trips_in_feed | int | Out-of-scope trips that appear in TripUpdates with `start_date` = this service date (D-013). Expected to be zero |
 | first_snapshot_utc | timestamp | Earliest snapshot's header timestamp |
 | last_snapshot_utc | timestamp | Latest snapshot's header timestamp |
 | max_gap_s | int | Largest gap between consecutive snapshots, in seconds |

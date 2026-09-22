@@ -1,0 +1,3 @@
+trip_id,organization_name,is_operator
+76110000042434006,Connect bus,1
+76110000042432234,Kalmars Länsstrafik,1

@@ -8,6 +8,11 @@
 -- calendar_dates exceptions), so the UNION branch does the actual work, but
 -- the full rule is implemented for correctness.
 --
+-- Trip scope (D-013): a trip's operator is the organization_name of its
+-- attributions.txt row with is_operator = 1. A trip is out of scope when
+-- that name exactly matches the agency_name of an agency.txt row other than
+-- Länstrafiken Kronoberg. A trip without an operator row is in scope.
+--
 -- Params: $static_dir, $date_int (e.g. 20260907), $weekday_col (e.g. sunday)
 
 CREATE OR REPLACE TABLE static_trips AS
@@ -53,6 +58,18 @@ SELECT * FROM read_csv(
     types={'stop_id': 'VARCHAR', 'parent_station': 'VARCHAR', 'stop_lat': 'DOUBLE', 'stop_lon': 'DOUBLE'}
 );
 
+CREATE OR REPLACE TABLE static_agency AS
+SELECT * FROM read_csv(
+    '$static_dir/agency.txt', header=true, quote='"', escape='"', delim=',', sample_size=-1,
+    types={'agency_id': 'VARCHAR'}
+);
+
+CREATE OR REPLACE TABLE static_attributions AS
+SELECT * FROM read_csv(
+    '$static_dir/attributions.txt', header=true, quote='"', escape='"', delim=',', sample_size=-1,
+    types={'trip_id': 'VARCHAR', 'is_operator': 'INTEGER'}
+);
+
 CREATE OR REPLACE VIEW active_service AS
 SELECT service_id FROM static_calendar
 WHERE $weekday_col = 1 AND start_date <= $date_int AND end_date >= $date_int
@@ -66,6 +83,26 @@ CREATE OR REPLACE TABLE scheduled_trips AS
 SELECT t.trip_id, t.route_id, t.service_id, TRY_CAST(NULLIF(t.direction_id, '') AS INTEGER) AS direction_id
 FROM static_trips t
 JOIN active_service s USING (service_id);
+
+-- One row per (trip, operator) among is_operator=1 attribution rows, with a
+-- count so the caller can fail the run if a trip has more than one.
+CREATE OR REPLACE TABLE trip_operator AS
+SELECT trip_id, organization_name AS operator,
+       COUNT(*) OVER (PARTITION BY trip_id) AS n_operator_rows
+FROM static_attributions
+WHERE is_operator = 1;
+
+CREATE OR REPLACE TABLE other_agency_names AS
+SELECT agency_name FROM static_agency WHERE agency_name != 'Länstrafiken Kronoberg';
+
+CREATE OR REPLACE TABLE trip_scope AS
+SELECT
+    st.trip_id,
+    op.operator,
+    op.n_operator_rows,
+    (op.operator IS NULL OR op.operator NOT IN (SELECT agency_name FROM other_agency_names)) AS in_scope
+FROM scheduled_trips st
+LEFT JOIN trip_operator op ON op.trip_id = st.trip_id;
 
 CREATE OR REPLACE TABLE scheduled_stop_times AS
 SELECT st.*

@@ -1,0 +1,2 @@
+trip_id,organization_name,is_operator
+76110000035912067,Skånetrafiken,1

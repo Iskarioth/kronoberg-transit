@@ -1,7 +1,8 @@
 -- One row per stop_times row of a trip active on D. Status is checked in
--- order cancelled -> skipped -> observed -> unobserved (D-009) and applies
--- to non-final stops only; final stops carry their held values and marker
--- but no status (D-008). delay_s is set only when status = observed.
+-- order out_of_scope (D-013) -> cancelled -> skipped -> observed ->
+-- unobserved (D-009) and applies to non-final stops only; final stops carry
+-- their held values and marker but no status (D-008). delay_s is set only
+-- when status = observed. in_scope is copied straight from the trip.
 --
 -- Requires the `scheduled_time_utc(hms)` scalar UDF to be registered first,
 -- and the `trips` table to already exist.
@@ -35,7 +36,8 @@ WITH base AS (
         sla.last_stop_relationship,
         CASE WHEN sla.last_seen_ts IS NOT NULL
              THEN to_timestamp(sla.last_seen_ts)::TIMESTAMP END AS last_seen_utc,
-        t.trip_status
+        t.trip_status,
+        t.in_scope
     FROM scheduled_stop_times st
     JOIN scheduled_trips sched ON sched.trip_id = st.trip_id
     JOIN trip_stop_bounds b ON b.trip_id = st.trip_id
@@ -46,6 +48,7 @@ with_status AS (
     SELECT *,
         CASE
             WHEN is_final THEN NULL
+            WHEN NOT in_scope THEN 'out_of_scope'
             WHEN trip_status = 'cancelled' THEN 'cancelled'
             WHEN last_stop_relationship = 'SKIPPED' THEN 'skipped'
             WHEN departure_marker THEN 'observed'
@@ -68,6 +71,7 @@ SELECT
     departure_marker,
     last_stop_relationship,
     last_seen_utc,
+    in_scope,
     status,
     CASE WHEN status = 'observed'
          THEN date_diff('second', scheduled_departure_utc, held_departure_utc)

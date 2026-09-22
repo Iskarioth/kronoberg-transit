@@ -1,0 +1,1 @@
+trip_id,organization_name,is_operator

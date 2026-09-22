@@ -1,0 +1,2 @@
+trip_id,organization_name,is_operator
+76110100044217987,Connect bus,1

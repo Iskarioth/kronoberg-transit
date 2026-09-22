@@ -1,0 +1,7 @@
+trip_id,organization_name,is_operator
+76110000042500503,Connect bus,1
+76110000042420681,Connect bus,1
+76110000044237190,Connect bus,1
+76110000040137819,Connect bus,1
+76110000044132375,Connect bus,1
+76110000043920067,Connect bus,1

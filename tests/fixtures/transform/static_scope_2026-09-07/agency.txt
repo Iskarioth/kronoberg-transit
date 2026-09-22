@@ -1,0 +1,7 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_fare_url
+76110000000001407,Länstrafiken Kronoberg,https://www.lanstrafikenkron.se/,Europe/Stockholm,sv,https://www.lanstrafikenkron.se/
+76110000000001635,Jönköpings Länstrafik,https://www.resrobot.se/,Europe/Stockholm,sv,
+76110000000001773,Blekinge Trafiken,https://www.resrobot.se/,Europe/Stockholm,sv,
+76110000000001795,Hallandstrafiken,https://www.resrobot.se/,Europe/Stockholm,sv,
+76110000000001817,Kalmars Länsstrafik,https://www.resrobot.se/,Europe/Stockholm,sv,
+76110000000001839,Skånetrafiken,https://www.resrobot.se/,Europe/Stockholm,sv,
