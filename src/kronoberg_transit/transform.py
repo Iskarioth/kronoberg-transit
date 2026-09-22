@@ -40,6 +40,20 @@ SQL_DIR = Path(__file__).resolve().parent / "sql"
 
 TABLES = ["trips", "stop_events", "routes", "stops", "feed_quality"]
 
+# DuckDB memory bound: every connection this module opens gets a memory_limit
+# and a spill (temp_directory) so it pages large intermediate tables to disk
+# instead of growing RSS unbounded. Configurable via env vars.
+DUCKDB_MEMORY_LIMIT = os.environ.get("DUCKDB_MEMORY_LIMIT", "2GB")
+DUCKDB_TEMP_DIRECTORY = Path(os.environ.get("DUCKDB_TEMP_DIRECTORY", "data/tmp/duckdb"))
+
+
+def new_duckdb_connection() -> duckdb.DuckDBPyConnection:
+    DUCKDB_TEMP_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect()
+    con.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT}'")
+    con.execute(f"SET temp_directory = '{DUCKDB_TEMP_DIRECTORY.as_posix()}'")
+    return con
+
 
 class RunLog:
     """Collects {stage, rows_in, rows_out} entries and writes them as JSON
@@ -260,7 +274,7 @@ def run_transform(svc_date: str) -> dict:
     log = RunLog(svc_date)
     print(f"Transforming {OPERATOR}/{FEED} for {svc_date}")
 
-    con = duckdb.connect()
+    con = new_duckdb_connection()
     con.execute("SET TimeZone='UTC'")
 
     with tempfile.TemporaryDirectory() as tmpdir:
