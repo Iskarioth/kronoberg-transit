@@ -27,6 +27,8 @@ Status labels:
 | Reporting time zone | `Europe/Stockholm` (handles DST) | FIXED |
 | Service day | The GTFS service date. Trips with scheduled times past 24:00 belong to the previous service day, as in the GTFS spec | FIXED |
 | Realtime-to-schedule matching | A realtime trip is matched to the static schedule on `trip_id` and `start_date`, using the KoDa static schedule for that start date. Processing service date D reads D's TripUpdates archives plus D+1's archives up to and including the hour containing the time two hours after D's last scheduled arrival. A trip found in D's archives with `start_date` D−1 belongs to D−1 (D-011) | FIXED |
+| Day type | `weekday` (Monday–Friday), `saturday` or `sunday`, from the calendar day of the service date (D-017) | FIXED |
+| Public holidays | How a public holiday that falls on a weekday is classified. None falls on a weekday before December 2026 | OPEN |
 
 ## Observed times
 
@@ -43,7 +45,9 @@ Status labels:
 | On time | −60 s ≤ delay ≤ +180 s | PROVISIONAL |
 | Early | Delay < −60 s. Early departures count as **not on time**: a bus leaving early strands passengers, which is worse than a late bus | PROVISIONAL |
 | Late | Delay > +180 s | PROVISIONAL |
-| Sensitivity | Every headline punctuality figure is also reported at +60 s and +300 s late thresholds, so results do not depend on one arbitrary cut-off | FIXED |
+| Sensitivity | Every headline punctuality figure is also reported at +60 s and +300 s late thresholds, so results do not depend on one arbitrary cut-off. Early stays delay_s < −60 in both versions; on time is −60 ≤ delay_s ≤ +60 (or +300), and late is delay_s > +60 (or +300) | FIXED |
+| Hour of day | The local hour, in the reporting time zone, of a stop event's scheduled departure (D-017) | FIXED |
+| Station | Stop events are grouped by their stop's `parent_station`; a stop without one is its own station (D-017) | FIXED |
 
 ## Exclusions and coverage
 

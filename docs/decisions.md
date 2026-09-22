@@ -500,3 +500,45 @@ is counted separately, as no realtime data during a feed outage.
   that fall inside an outage.
 - data_quality reports outage windows, and the count of missing trips inside outages
   next to the count from D-010.
+
+---
+
+## D-017 · 2026-09-22 · Publishing layer: one tab per level, with counts and a floor flag on every row
+
+**Decision:** The Google Sheet holds one tab per level at which figures are published:
+network_monthly, route_monthly, station_monthly and hour_monthly by calendar month and
+day type; route_daily for trends; and data_quality and run_log. Every row stores:
+
+- the counts behind its shares: eligible, observed and unobserved departures, observed
+  trips, and departures in each punctuality class at the base and sensitivity thresholds
+- the shares themselves
+- a reportable flag with its reason, evaluated at that row's own level (D-014)
+
+Routes are keyed on route_id and labelled with their number plus the first and last
+stations of their most common trip pattern. Each run rebuilds every tab from the full
+warehouse.
+
+**Reason:**
+
+- The reporting floor applies at the level shown, and shares cannot be averaged across
+  rows, so each published level needs its own rows and its own flag.
+- Storing counts lets anyone recompute and check a figure, and lets the dashboard show
+  the numbers behind it.
+- Six route numbers map to more than one route_id (31, 12, 1, 2, 3 and 14), and
+  route_long_name is empty in this feed, so the number alone does not identify a route.
+- The publishing layer is small (roughly 3,000 route_daily rows and 450 route_monthly
+  rows per month), so rebuilding it on every run is simpler and safer than updating rows
+  in place.
+- Hotspots are ranked at station level. Every stop served on the validated days has a
+  parent station, and a station is what passengers recognise.
+
+**Consequences:**
+
+- The earlier stop_hotspots and hour_of_day tabs are replaced by station_monthly and
+  hour_monthly.
+- On time, Early and Late use the thresholds in definitions.md, which are still
+  PROVISIONAL. Figures are not presented as results until those thresholds are FIXED.
+- Monthly rows carry a month-complete flag. A month is complete when every service date
+  in it has a warehouse partition (D-015).
+- The Sensitivity row now states its inequalities explicitly. Its meaning is unchanged:
+  only the late-side threshold moves.
