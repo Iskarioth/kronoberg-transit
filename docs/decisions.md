@@ -470,3 +470,33 @@ that pass the reporting floor on a single day (D-014).
 - The daylight-saving handling flagged in D-011 must be in place before the pipeline
   processes 2026-10-25.
 - September 2026 is complete once the early archives of 2026-10-01 have been processed.
+
+---
+
+## D-016 · 2026-09-22 · Feed outages are recorded, and missing trips inside them counted separately
+
+**Decision:** A feed outage is a stretch of more than 300 s with no TripUpdates snapshot
+within the archives read for a service date. That includes the stretch from the start of
+the first hour read to the first snapshot, and from the last snapshot to the end of the
+last hour read. Outages are stored per service date with their start and end times. An
+in-scope trip with no realtime data whose whole scheduled span falls inside one outage
+is counted separately, as no realtime data during a feed outage.
+
+**Reason:**
+
+- On every backfilled date from 2026-09-01 to 2026-09-20, the feed has at least one fully
+  dark local hour at night. On 2026-09-08 it was dark from 01:09 to 04:39 local, and on
+  2026-09-19 from 03:22 to 05:29. A trip scheduled inside such a window cannot appear in
+  the feed, so its absence says nothing about the service.
+- `local_hours_without_snapshots` lists only clock hours with no snapshots at all, and
+  `max_gap_s` gives only the length of the largest gap. Neither says when the feed was
+  dark, which is what matters when judging a missing trip.
+- 300 s is far above the normal cadence of about 16 s, so ordinary jitter does not count
+  as an outage.
+
+**Consequences:**
+
+- The warehouse gains a `feed_gaps` table and a column on `trips` marking missing trips
+  that fall inside an outage.
+- data_quality reports outage windows, and the count of missing trips inside outages
+  next to the count from D-010.
