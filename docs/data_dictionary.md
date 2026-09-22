@@ -5,67 +5,164 @@ file in sync with every schema change (see `CLAUDE.md`).
 
 ## Google Sheets tabs
 
+Built by `kronoberg_transit.aggregate` (D-017) from every warehouse partition. Every run
+rebuilds every tab from scratch (`--dry-run` writes the same rows as CSV to
+`data/publish/` instead). All shares are fractions between 0 and 1, rounded to 4
+decimals, null when their denominator is 0. All times are local (`Europe/Stockholm`,
+D-017's Reporting time zone) as ISO 8601 strings. `month` is `YYYY-MM`. `day_type` is
+`weekday` | `saturday` | `sunday` on `route_daily` and `data_quality`, and additionally
+`all` (the union of the other three) on every monthly tab (D-017).
+
+Two column blocks are shared across tabs:
+
+**Measure block M** (every tab except `data_quality` and `run_log`), over in-scope,
+non-final stop events (D-008, D-013):
+
+| Column | Type | Description |
+|---|---|---|
+| eligible_departures | integer | Non-final in-scope stop events with status `observed` or `unobserved` |
+| observed_departures | integer | Of those, status `observed` |
+| unobserved_departures | integer | Of those, status `unobserved` |
+| coverage_share | float, nullable | observed_departures ÷ eligible_departures (D-009) |
+| observed_trips | integer | Distinct (service_date, trip_id) with at least one observed departure in the group (D-014) |
+| early_departures | integer | Observed departures with `delay_s < -60` |
+| on_time_departures | integer | Observed departures with `-60 <= delay_s <= 180` |
+| late_departures | integer | Observed departures with `delay_s > 180` |
+| on_time_60_departures | integer | Observed departures with `-60 <= delay_s <= 60` (+60s sensitivity) |
+| on_time_300_departures | integer | Observed departures with `-60 <= delay_s <= 300` (+300s sensitivity) |
+| early_share, on_time_share, late_share, on_time_60_share, on_time_300_share | float, nullable | Each departures column ÷ observed_departures |
+| median_delay_s, p90_delay_s | float, nullable | `quantile_cont(delay_s, 0.5 \| 0.9)` over observed departures |
+| reportable | bool | False when eligible_departures = 0, observed_trips < 20, or coverage_share < 0.90 (D-014) |
+| not_reportable_reason | string | Empty when reportable; else `observed_trips<20`, `coverage<90%`, both joined by `;`, or `no_eligible_departures` |
+
+**Trip block T** (`network_monthly`, `route_monthly`, `route_daily`), over all trips
+regardless of scope:
+
+| Column | Type | Description |
+|---|---|---|
+| scheduled_trips | integer | All trips scheduled in the group, any scope |
+| in_scope_trips | integer | Of those, `in_scope` (D-013) |
+| out_of_scope_trips | integer | Of those, not `in_scope` |
+| cancelled_trips | integer | `trip_status = cancelled` |
+| trips_no_realtime_data | integer | `trip_status = no_realtime_data` (D-010) |
+| trips_no_realtime_data_in_outage | integer | Of those, `no_data_in_outage` (D-016) |
+| cancellation_share | float, nullable | cancelled_trips ÷ in_scope_trips |
+| no_realtime_data_share | float, nullable | trips_no_realtime_data ÷ in_scope_trips |
+| skipped_departures | integer | Non-final in-scope stop events with status `skipped` (D-009) |
+| skipped_share | float, nullable | skipped_departures ÷ (eligible_departures + skipped_departures) |
+
+### `network_monthly`
+
+One row per (month, day_type). T and M as above.
+
+| Column | Type | Description |
+|---|---|---|
+| month | string | `YYYY-MM` |
+| day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| service_dates | integer | Distinct service dates contributing to this row |
+| month_complete | bool | True once every calendar date in the month has a warehouse partition (D-015) |
+| *(T block)* | | |
+| *(M block)* | | |
+
+### `route_monthly`
+
+One row per (month, day_type, route_id). Includes every route with at least one
+scheduled trip that month/day_type, even entirely out-of-scope routes (M block is then
+all zero/null). Every route number is a route_id; `route_label` disambiguates route
+numbers that map to more than one route_id (D-017).
+
+| Column | Type | Description |
+|---|---|---|
+| month | string | `YYYY-MM` |
+| day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| route_id | string | GTFS route ID |
+| route_short_name | string | Short route name |
+| route_label | string | `<route_short_name> · <first station> – <last station>` of the route's most common stop pattern (ties broken by earliest scheduled first departure); `route_id` appended in parentheses to both sides of a label collision |
+| service_dates | integer | Distinct service dates this route ran on, this month/day_type |
+| month_complete | bool | See `network_monthly` |
+| *(T block)* | | |
+| in_scope_share | float, nullable | in_scope_trips ÷ scheduled_trips |
+| *(M block)* | | |
+
 ### `route_daily`
+
+One row per (service_date, route_id). Same shape as `route_monthly` at daily grain, no
+`service_dates`/`month_complete`; `day_type` is that date's own actual type.
 
 | Column | Type | Description |
 |---|---|---|
 | service_date | date (ISO `YYYY-MM-DD`) | Service date the row summarizes |
+| day_type | string | `weekday` \| `saturday` \| `sunday` |
 | route_id | string | GTFS route ID |
-| route_name | string | Human-readable route name |
-| scheduled_departures | integer | Departures scheduled for this route on this date |
-| observed_departures | integer | Departures with a matching realtime observation |
-| coverage_pct | float | observed_departures / scheduled_departures |
-| on_time_pct | float | Share of observed departures classified on-time |
-| late_pct | float | Share of observed departures classified late |
-| early_pct | float | Share of observed departures classified early |
-| cancelled_trips | integer | Trips cancelled per the realtime feed |
-| median_delay_s | integer | Median delay in seconds across observed departures |
-| p90_delay_s | integer | 90th percentile delay in seconds |
+| route_short_name | string | Short route name |
+| route_label | string | See `route_monthly` |
+| *(T block)* | | |
+| in_scope_share | float, nullable | in_scope_trips ÷ scheduled_trips |
+| *(M block)* | | |
 
-### `stop_hotspots`
+### `station_monthly`
+
+One row per (month, day_type, station). A station is a stop's `parent_station`, or the
+stop itself if it has none (D-017). M block only.
 
 | Column | Type | Description |
 |---|---|---|
-| period_start | date (ISO `YYYY-MM-DD`) | Start of the aggregation window |
-| period_end | date (ISO `YYYY-MM-DD`) | End of the aggregation window |
-| stop_id | string | GTFS stop ID |
-| stop_name | string | Human-readable stop name |
-| observed_departures | integer | Departures with a matching realtime observation at this stop |
-| median_delay_s | integer | Median delay in seconds |
-| p90_delay_s | integer | 90th percentile delay in seconds |
-| late_pct | float | Share of observed departures classified late |
+| month | string | `YYYY-MM` |
+| day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| station_id | string | The station's `stop_id` (its own, or its members' `parent_station`) |
+| station_name | string | The station's `stop_name` |
+| route_short_names | string | Distinct route short names serving this station, sorted, comma-separated |
+| month_complete | bool | See `network_monthly` |
+| *(M block)* | | |
 
-### `hour_of_day`
+### `hour_monthly`
+
+One row per (month, day_type, hour_local). M block only, grouped by the local hour of
+each stop event's scheduled departure (D-017's Hour of day).
 
 | Column | Type | Description |
 |---|---|---|
-| period_start | date (ISO `YYYY-MM-DD`) | Start of the aggregation window |
-| period_end | date (ISO `YYYY-MM-DD`) | End of the aggregation window |
-| day_type | string | e.g. weekday / weekend classification |
-| hour | integer | Hour of day, 0-23, in `Europe/Stockholm` |
-| observed_departures | integer | Departures with a matching realtime observation |
-| on_time_pct | float | Share of observed departures classified on-time |
-| median_delay_s | integer | Median delay in seconds |
+| month | string | `YYYY-MM` |
+| day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| hour_local | integer | Local hour, 0-23, of the scheduled departure |
+| month_complete | bool | See `network_monthly` |
+| *(M block)* | | |
 
 ### `data_quality`
+
+One row per service date. Snapshot-count columns come from `feed_quality` (D's own
+archives only, D-012); the gap columns come from `feed_gaps` instead (D's own hours plus
+any D+1 hours read, D-016), since that is what actually bounds an outage.
 
 | Column | Type | Description |
 |---|---|---|
 | service_date | date (ISO `YYYY-MM-DD`) | Service date this row reports on |
-| feed | string | Feed name (e.g. `TripUpdates`) |
-| expected_snapshots | integer | Number of realtime snapshots expected for the date |
-| received_snapshots | integer | Number of realtime snapshots actually received |
-| missing_hours | string | Hours with no data, comma-separated |
-| trips_scheduled | integer | Trips scheduled per the static schedule |
-| trips_observed | integer | Trips with at least one realtime observation |
-| notes | string | Free-text notes on data quality issues |
+| day_type | string | `weekday` \| `saturday` \| `sunday` |
+| distinct_snapshots | integer | `feed_quality.distinct_snapshots` |
+| duplicate_snapshots | integer | `feed_quality.duplicate_snapshots` |
+| first_snapshot_local | string | `feed_quality.first_snapshot_utc`, converted |
+| last_snapshot_local | string | `feed_quality.last_snapshot_utc`, converted |
+| max_gap_s | integer | Largest `feed_gaps.gap_s` that day |
+| largest_gap_start_local, largest_gap_end_local | string | That gap's window, converted |
+| outages | integer | Count of that day's `feed_gaps` rows |
+| outage_minutes_06_22 | float | Minutes of outage overlapping 06:00-22:00 local, summed across that day's gaps |
+| local_hours_without_snapshots | string | `feed_quality.local_hours_without_snapshots` |
+| marker_share | float, nullable | Recorded-time marker share, all non-final stop events with a held value (definitions.md) |
+| out_of_scope_trips_in_feed | integer | `feed_quality.out_of_scope_trips_in_feed` (D-013) |
+| in_scope_trips | integer | In-scope trips scheduled that day |
+| trips_no_realtime_data | integer | `trip_status = no_realtime_data` that day |
+| trips_no_realtime_data_in_outage | integer | Of those, `no_data_in_outage` (D-016) |
+| cancelled_trips | integer | `trip_status = cancelled` that day |
+| coverage_share | float, nullable | Network-wide coverage that day |
 
 ### `run_log`
+
+Unchanged. `run_type = aggregate` for a publishing-layer run.
 
 | Column | Type | Description |
 |---|---|---|
 | run_ts_utc | timestamp (UTC, ISO 8601) | When the run occurred |
-| run_type | string | e.g. `setup`, `smoke-ci`, `daily` |
+| run_type | string | e.g. `setup`, `smoke-ci`, `aggregate` |
 | service_date | date (ISO `YYYY-MM-DD`) | Service date the run processed, if applicable |
 | stage | string | Pipeline stage name |
 | status | string | `ok`, `error`, etc. |
@@ -73,8 +170,6 @@ file in sync with every schema change (see `CLAUDE.md`).
 | rows_out | integer | Row count out of the stage |
 | duration_s | float | Stage duration in seconds |
 | message | string | Free-text status message |
-
-These schemas are a starting point and will evolve as the pipeline is built.
 
 ## Parquet schema (Hugging Face warehouse)
 
