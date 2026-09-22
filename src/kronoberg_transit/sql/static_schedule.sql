@@ -13,7 +13,10 @@
 CREATE OR REPLACE TABLE static_trips AS
 SELECT * FROM read_csv(
     '$static_dir/trips.txt', header=true, quote='"', escape='"', delim=',', sample_size=-1,
-    types={'route_id': 'VARCHAR', 'service_id': 'VARCHAR', 'trip_id': 'VARCHAR', 'direction_id': 'VARCHAR'}
+    types={
+        'route_id': 'VARCHAR', 'service_id': 'VARCHAR', 'trip_id': 'VARCHAR',
+        'direction_id': 'VARCHAR', 'shape_id': 'VARCHAR'
+    }
 );
 
 CREATE OR REPLACE TABLE static_stop_times AS
@@ -21,7 +24,8 @@ SELECT * FROM read_csv(
     '$static_dir/stop_times.txt', header=true, quote='"', escape='"', delim=',', sample_size=-1,
     types={
         'trip_id': 'VARCHAR', 'stop_id': 'VARCHAR',
-        'arrival_time': 'VARCHAR', 'departure_time': 'VARCHAR'
+        'arrival_time': 'VARCHAR', 'departure_time': 'VARCHAR',
+        'pickup_booking_rule_id': 'VARCHAR', 'drop_off_booking_rule_id': 'VARCHAR'
     }
 );
 
@@ -40,7 +44,7 @@ SELECT * FROM read_csv(
 CREATE OR REPLACE TABLE static_routes AS
 SELECT * FROM read_csv(
     '$static_dir/routes.txt', header=true, quote='"', escape='"', delim=',', sample_size=-1,
-    types={'route_id': 'VARCHAR'}
+    types={'route_id': 'VARCHAR', 'agency_id': 'VARCHAR'}
 );
 
 CREATE OR REPLACE TABLE static_stops AS
