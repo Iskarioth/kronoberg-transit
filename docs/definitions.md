@@ -14,6 +14,7 @@ Status labels:
 | Item | Value | Status |
 |---|---|---|
 | Operator | Länstrafiken Kronoberg, Trafiklab code `krono` | FIXED |
+| Trips in scope | Trips in the `krono` static schedule for the service date, except those whose operator in `attributions.txt` is another public transport authority listed in the feed's `agency.txt` (any agency other than Länstrafiken Kronoberg). Trips without an attribution row are in scope. Punctuality, coverage, cancelled trips, skipped stops, trips with no realtime data and unobserved stop events all apply to trips in scope only. Out-of-scope trips are counted separately per route and day (D-013) | FIXED |
 | Realtime source | KoDa historical GTFS-RT, feed `TripUpdates` | FIXED |
 | Schedule source | KoDa historical GTFS static for the **same service date** | FIXED |
 | Analysis period | To be set after the first backfill test | OPEN |
@@ -51,8 +52,9 @@ Status labels:
 | Cancelled trips | Trips whose last appearance in TripUpdates has `schedule_relationship = CANCELED`. Their stop events are excluded from punctuality and coverage, and cancelled trips are reported separately as a cancellation rate: cancelled trips ÷ scheduled trips, per route and day (D-009) | FIXED |
 | Skipped stops | Stop events at the measurement point whose last realtime value (from the last snapshot in which the stop appears, as in the Observed time rule) has `schedule_relationship = SKIPPED`. Excluded from punctuality and coverage, and reported separately as a skipped-stop rate: skipped stop events ÷ scheduled stop events at the measurement point on trips that were not cancelled, per route and day (D-009) | FIXED |
 | Trips with no realtime data | Scheduled trips on the service day that never appear in TripUpdates, matched on `trip_id` and `start_date` (D-011). Reported per route and day as a count and as a share of scheduled trips, next to the cancellation rate. Their stop events are `unobserved`. They are never labelled cancelled (D-010) | FIXED |
+| Out-of-scope trips in the feed | Out-of-scope trips that appear in TripUpdates, counted per service day in data_quality. Expected to be zero; a non-zero count means the assumption behind D-013 has changed (D-013) | FIXED |
 | Unobserved stop events | Scheduled stop events that are not on a cancelled trip, not skipped (D-009), and have no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007). They are labelled `unobserved`, **never** counted as on time and never silently dropped | FIXED |
-| Stop event status | Every scheduled stop event at the measurement point gets exactly one status, checked in this order: `cancelled` (on a cancelled trip), `skipped`, `observed`, `unobserved` (D-009) | FIXED |
+| Stop event status | Every scheduled stop event at the measurement point gets exactly one status, checked in this order: `out_of_scope` (on an out-of-scope trip, D-013), `cancelled` (on a cancelled trip), `skipped`, `observed`, `unobserved` (D-009) | FIXED |
 | Coverage | Observed stop events ÷ scheduled stop events at the measurement point (final stops excluded, D-008), per route and day. Stop events on cancelled trips and skipped stop events are excluded from both counts, since each is reported in its own rate (D-009). Reported alongside every punctuality figure | FIXED |
 | Minimum coverage | Below which a route-day is flagged as unreliable in reporting | OPEN |
 | Added trips | Trips in realtime with no matching scheduled trip: counted and logged, excluded from punctuality | PROVISIONAL |

@@ -292,6 +292,13 @@ end. Of the 122 missing trips on 2026-09-07, 121 were scheduled to start between
 day's first and last snapshot; on 2026-09-06, 26 of 28 were. The remaining 1 and 2 were
 scheduled to start after that day's last snapshot.
 
+**Addendum (2026-09-22):** Almost all the missing trips in this decision's evidence were
+run by neighbouring authorities, which D-013 puts out of scope: 116 of the 121 trips
+with no realtime data on 2026-09-07 (after reading the next day's archives, D-011) and
+all 28 on 2026-09-06. Within scope, 5 of 2,046 trips had no realtime data on 2026-09-07
+and 0 of 701 on 2026-09-06. The rule stands: trips with no realtime data are reported
+and never assumed cancelled.
+
 ---
 
 ## D-011 · 2026-09-21 · Matching realtime trips to the schedule by service date
@@ -354,3 +361,45 @@ outside the measurement point (D-008).
   aggregation step is built.
 - Trips are labelled `in_feed`, `cancelled` or `no_realtime_data`. `in_feed` means the
   trip appeared in TripUpdates, not that it ran as scheduled.
+
+---
+
+## D-013 · 2026-09-22 · Trips run by neighbouring authorities are out of scope
+
+**Decision:** A trip in the `krono` static schedule is out of scope when its operator in
+`attributions.txt` is another public transport authority listed in the feed's
+`agency.txt`, meaning any agency other than Länstrafiken Kronoberg. Out-of-scope trips
+and their stop events are excluded from punctuality, coverage, cancellations and trips
+with no realtime data, and are counted separately per route and day. All other trips
+are in scope, including any trip without an attribution row.
+
+**Reason:**
+
+- On both validated days, every trip has exactly one operator attribution. Trips run by
+  neighbouring authorities (Skånetrafiken, Kalmars Länsstrafik, Hallandstrafiken,
+  Jönköpings Länstrafik, Blekinge Trafiken) never appeared in TripUpdates: 28 of 28 on
+  2026-09-06 and 116 of 116 on 2026-09-07. Trips run by Connect bus appeared in 701 of
+  701 and in 2,039 of 2,046 (2 cancelled, 5 with no realtime data).
+- The split holds within mixed routes. On route 310 (2026-09-06) and route 320
+  (2026-09-07), the Connect bus trips are in the feed and the other authorities' trips
+  are not.
+- Counting these trips would report a gap in the `krono` feed that is really a
+  difference in who runs the trip. Coverage within scope is 99.9% (2026-09-06) and
+  99.4% (2026-09-07). Across all trips it is 94.8% and 94.4%.
+- The rule names a category (another authority in the same feed), not the current
+  contractor, so it survives a change of operator.
+- Whether these trips appear in the neighbouring authorities' own realtime feeds is not
+  verified.
+
+**Consequences:**
+
+- Out-of-scope trips get trip status `out_of_scope`, and their non-final stop events get
+  status `out_of_scope`, which takes precedence over every other status. Their
+  first-seen and last-seen times are still recorded.
+- data_quality counts out-of-scope trips that appear in TripUpdates. The expected count
+  is zero; a non-zero count means the assumption behind this decision has changed.
+- Routes with both in-scope and out-of-scope trips, such as 310 and 320, are reported on
+  their in-scope trips only, with the in-scope share of the route's scheduled trips
+  shown next to the figures.
+- Measuring these trips from the neighbouring authorities' feeds is a possible later
+  extension, not part of this project's scope.
