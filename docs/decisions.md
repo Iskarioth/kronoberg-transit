@@ -688,3 +688,45 @@ the local hours that exist on each service date.
 - Processing stops at 2026-10-24, the first service date affected, until the
   daylight-saving question is settled in a later decision. That date becomes
   processable on 2026-10-26.
+
+---
+
+## D-021 · 2026-09-22 · Stop events in the daylight-saving window are excluded, and schedule mismatches are counted
+
+**Decision:** On a date when Europe/Stockholm changes its UTC offset, stop events whose
+timetable clock time falls between 02:00 and 03:59 local on that date are marked
+`dst_ambiguous`. That covers times written 02:00–03:59 on that date's service, and
+26:00–27:59 on the previous date's service. They are excluded from punctuality and
+coverage and counted separately. Every service date also records how many stop events
+have a feed scheduled time that differs from the pipeline's outside that window. That
+count is expected to be zero. The date guard added in D-020 is removed.
+
+**Reason:**
+
+- On the night before the spring change (2026-03-28 service), departures written 26:xx
+  fall in the hour that does not exist. The GTFS noon-minus-12-hours rule places them one
+  hour earlier than the operator's own scheduled time, and the recorded departures match
+  the operator's time. As a result, 118 departures between 03:00 and 04:20 local on
+  2026-03-29 got delays inflated by about an hour. Two stops written 27:00 were off by
+  about 57 minutes.
+- Around the autumn change (2025-10-25 and 2025-10-26 service), published delays were
+  clean: no observed departure was 30 minutes or more off. The rule covers autumn too,
+  because the evidence is one night of each kind, and one symmetric rule is easier to
+  state and check than a spring-only exception.
+- The window is defined on the timetable's clock time, not on converted times, because
+  that is where the ambiguity sits.
+- On 2025-10-25 the feed also tagged some after-midnight trips with the next service
+  date. The last-appearance rule (D-007) picked the correctly dated run, so published
+  delays were unaffected. A per-date count of schedule mismatches catches both kinds of
+  problem automatically. From 2026-09-01 to 2026-09-20 it is zero on every date.
+
+**Consequences:**
+
+- The Stop event status order gains `dst_ambiguous` after `skipped`. Coverage and
+  Unobserved stop events exclude it.
+- data_quality reports `dst_ambiguous` departures and schedule-mismatch stop events per
+  date. A non-zero mismatch count marks that date's pipeline run as a warning rather than
+  stopping it, because the known cause (wrong service-date tags) does not reach
+  published delays.
+- The pipeline no longer refuses dates next to a daylight-saving change (D-020).
+- Everywhere else, scheduled times still follow the GTFS noon-minus-12-hours rule.
