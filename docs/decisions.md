@@ -636,3 +636,55 @@ unchanged: this decision selects which of its stop events the headline uses.
   selection still differ from any single operator's published punctuality.
 - The warehouse marks each stop event as a timing stop or not, and the Sheet tabs gain a
   stop set column.
+
+---
+
+## D-020 · 2026-09-22 · The pipeline runs daily in GitHub Actions, with the Hugging Face dataset as the warehouse
+
+**Decision:** A scheduled GitHub Actions workflow runs the pipeline once a day. Each run:
+
+- processes every service date from the day after the latest date in the Hugging Face
+  dataset up to two days before the run date (Europe/Stockholm), at most seven dates
+  per run
+- uploads each date's warehouse partitions to the dataset
+- then rebuilds the Google Sheet from the full dataset
+
+The Hugging Face dataset is the warehouse of record. Archives are requested only for
+the local hours that exist on each service date.
+
+**Reason:**
+
+- The local machine ran out of memory twice during backfills, and a scheduled task
+  there only runs while the machine is on. A fresh CI runner each day avoids both, and
+  nothing builds up on disk.
+- A service date needs the next day's early hours (D-011), and KoDa serves a day's data
+  only after that day has ended, so the latest date that can be processed is two days
+  back. Processing every missing date up to that point means a failed or skipped run is
+  caught up by the next one.
+- KoDa labels archives by Europe/Stockholm local hour. On 2025-10-26 (autumn change) the
+  02 archive holds both occurrences of the repeated hour. On 2026-03-29 (spring change)
+  there is no 02 archive, and the snapshot timeline is continuous across it. Requesting
+  only the local hours that exist reads every snapshot once; requesting 00–23
+  unconditionally fails on spring-change days.
+- Scheduled times around daylight-saving changes are not yet verified. Comparing the
+  feed's own scheduled instants (time minus delay) with the pipeline's on 2025-10-25,
+  2025-10-26 and 2026-03-28 found systematic differences on after-midnight stop times,
+  which are still being investigated. Until that is settled, the pipeline does not
+  process a service date on, or the day before, a daylight-saving change.
+- Archive file names carry a local time marked with a Z suffix, so only the feed header
+  timestamp is used for time.
+
+**Consequences:**
+
+- The 20 dates already built locally (2026-09-01 to 2026-09-20) are uploaded once from
+  the local warehouse, and CI continues from 2026-09-21.
+- A date that fails a hard check or the out-of-scope tripwire (D-013) stops the run
+  before that date is uploaded; the next run retries it.
+- Intermediate build files are deleted after each successful date. Raw archives and
+  static schedules can be fetched again from KoDa when needed.
+- The daylight-saving question raised in D-011 is not resolved by this decision; it is
+  deferred to a later decision, and the pipeline guards against processing a date it
+  affects until then.
+- Processing stops at 2026-10-24, the first service date affected, until the
+  daylight-saving question is settled in a later decision. That date becomes
+  processable on 2026-10-26.
