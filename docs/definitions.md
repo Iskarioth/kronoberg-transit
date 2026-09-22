@@ -42,6 +42,8 @@ Status labels:
 |---|---|---|
 | Delay | Observed time minus scheduled time, in seconds. Positive means late | FIXED |
 | Measurement point | Departure time at every stop except the final stop of a trip. Final-stop arrivals are excluded from punctuality and from coverage (D-008) | FIXED |
+| Timing stop | A stop event whose `timepoint` in the same-date static schedule is 1, or empty (which GTFS treats as an exact time). Scheduled times at timing stops are whole minutes; at other stops they almost always carry seconds, consistent with times computed between timing stops (D-019) | FIXED |
+| Headline stop set | Headline, route and hour-of-day figures are computed on departures at timing stops, final stops excluded (D-008). Every published level also carries the same figures on all non-final stops, labelled by stop set. Station figures are published on all stops, and also on timing stops for stations that have one (D-019) | FIXED |
 | On time | −60 s ≤ delay ≤ +180 s (D-018) | FIXED |
 | Early | Delay < −60 s. Early departures count as **not on time**: a bus leaving early strands passengers, which is worse than a late bus (D-018) | FIXED |
 | Late | Delay > +180 s (D-018) | FIXED |

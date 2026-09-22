@@ -597,3 +597,42 @@ The +60 s and +300 s sensitivity versions stay as defined.
   https://www.riksdagen.se/sv/dokument-och-lagar/dokument/rapport-fran-riksdagen/punktlighet-for-persontrafik-pa-jarnvag-en_h80wrfr5/html/
 - Trafikverket, Järnkoll på persontågens punktlighet:
   https://www.trafikverket.se/resa-och-trafik/jarnvag/jarnkoll--fakta-om-svensk-jarnvag/jarnkoll-pa-persontagens-punktlighet/
+
+---
+
+## D-019 · 2026-09-22 · Headline punctuality is measured at timing stops
+
+**Decision:** Headline, route and hour-of-day punctuality is measured on departures at
+timing stops (`stop_times.timepoint` = 1), with final stops excluded as before
+(D-008). Every published level also carries the same figures computed on all non-final
+stops, labelled by stop set. Station figures are published on all stops, and also on
+timing stops for stations that have one. The measurement point itself (D-008) is
+unchanged: this decision selects which of its stop events the headline uses.
+
+**Reason:**
+
+- The `krono` schedule marks timing stops. On 2026-09-06 and 2026-09-07, every stop time
+  has `timepoint` 0 or 1, about 15% of in-scope stop events are timing stops, and every
+  in-scope trip starts and ends at one, with a median of 3 per trip.
+- Scheduled times at timing stops are always whole minutes. At other stops, 98% carry
+  non-zero seconds (2026-09-07). That is consistent with times computed between timing
+  stops rather than times the operator publishes. Measuring early and late against those
+  times at 85% of stops would mix punctuality with the way the times were produced.
+- Swedish operators such as Västtrafik measure at timing stops (D-018), so a timing-stop
+  headline is the more comparable one.
+- The choice was made before any punctuality figure at timing stops was computed.
+
+**Consequences:**
+
+- First stops make up about 40% of timing-stop departures, because every trip starts at
+  one. D-007 found that recorded departures at first stops run a median 16 s earlier
+  than GPS, which understates lateness there: by 2.6 pp at +180 s and 9.6 pp at +60 s on
+  2026-09-07. As a rough estimate from that one day of GPS data, the timing-stop
+  headline therefore leans optimistic by about 1 pp at +180 s and about 4 pp at +60 s.
+  The write-up states this.
+- The all-stops version stays published. It reflects the times a journey planner built
+  on this feed shows at ordinary stops, and it covers every place passengers board.
+- Timing-stop figures are closer to how operators measure, but thresholds and stop
+  selection still differ from any single operator's published punctuality.
+- The warehouse marks each stop event as a timing stop or not, and the Sheet tabs gain a
+  stop set column.
