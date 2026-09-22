@@ -21,10 +21,23 @@ from pathlib import Path
 import duckdb
 import gspread
 
+from kronoberg_transit.transform import TABLES as WAREHOUSE_TABLES
 from kronoberg_transit.transform import render_sql
 
 WAREHOUSE_DIR = Path("data/warehouse")
 PUBLISH_DIR = Path("data/publish")
+
+# Sort keys (D-021 Part 1): every tab is written in this order, so the same
+# warehouse always produces the same row order regardless of glob/partition
+# read order.
+SORT_KEYS = {
+    "network_monthly": ["month", "day_type", "stop_set"],
+    "route_monthly": ["month", "day_type", "stop_set", "route_id"],
+    "route_daily": ["service_date", "day_type", "stop_set", "route_id"],
+    "station_monthly": ["month", "day_type", "stop_set", "station_id"],
+    "hour_monthly": ["month", "day_type", "stop_set", "hour_local"],
+    "data_quality": ["service_date"],
+}
 
 TABS = [
     "network_monthly",
@@ -95,7 +108,39 @@ STOP_SET_KEY_COLUMNS = {
 }
 
 
+def check_partition_schemas(warehouse_dir: Path) -> None:
+    """Every service_date partition of a warehouse table must share the same
+    column names and types (D-021 Part 1). A silent schema drift between
+    partitions (e.g. a column added or retyped mid-backfill) would otherwise
+    only surface as a confusing downstream query error, or worse, a silent
+    implicit cast."""
+    import pyarrow.parquet as pq
+
+    problems = []
+    for table in WAREHOUSE_TABLES:
+        table_dir = warehouse_dir / table
+        if not table_dir.exists():
+            continue
+        partitions = sorted(table_dir.glob("service_date=*/part-0.parquet"))
+        if not partitions:
+            continue
+        ref_path = partitions[0]
+        ref_schema = {f.name: str(f.type) for f in pq.ParquetFile(ref_path).schema_arrow}
+        for p in partitions[1:]:
+            schema = {f.name: str(f.type) for f in pq.ParquetFile(p).schema_arrow}
+            if schema != ref_schema:
+                diff = {
+                    k: (ref_schema.get(k), schema.get(k))
+                    for k in set(ref_schema) | set(schema)
+                    if ref_schema.get(k) != schema.get(k)
+                }
+                problems.append(f"{table} {p.parent.name} vs {ref_path.parent.name}: {diff}")
+    if problems:
+        raise AssertionError("Partition schema mismatch:\n" + "\n".join(problems))
+
+
 def build_tables(con: duckdb.DuckDBPyConnection, warehouse_dir: Path = WAREHOUSE_DIR) -> None:
+    check_partition_schemas(warehouse_dir)
     con.execute(render_sql("aggregate_base.sql", warehouse_dir=warehouse_dir.as_posix()))
     con.execute(render_sql("aggregate_network_monthly.sql"))
     con.execute(render_sql("aggregate_route_monthly.sql"))
@@ -231,10 +276,18 @@ def get_sheet() -> gspread.Spreadsheet:
     return gc.open_by_key(key)
 
 
+def _order_by_clause(table: str) -> str:
+    keys = SORT_KEYS.get(table)
+    return f" ORDER BY {', '.join(keys)}" if keys else ""
+
+
 def write_csv(con: duckdb.DuckDBPyConnection, table: str, out_dir: Path) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{table}.csv"
-    con.execute(f"COPY (SELECT * FROM {table}) TO '{out_path.as_posix()}' (HEADER, DELIMITER ',')")
+    order_by = _order_by_clause(table)
+    con.execute(
+        f"COPY (SELECT * FROM {table}{order_by}) TO '{out_path.as_posix()}' (HEADER, DELIMITER ',')"
+    )
     return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
 
@@ -272,7 +325,8 @@ def _cell(v, kind: str):
 def _table_values(con: duckdb.DuckDBPyConnection, table: str) -> tuple[list[str], list[list]]:
     kinds = _column_kinds(con, table)
     cols = [d[0] for d in con.execute(f"SELECT * FROM {table} LIMIT 0").description]
-    rows = con.execute(f"SELECT * FROM {table}").fetchall()
+    order_by = _order_by_clause(table)
+    rows = con.execute(f"SELECT * FROM {table}{order_by}").fetchall()
     values = [[_cell(v, kinds[c]) for v, c in zip(row, cols, strict=True)] for row in rows]
     return cols, values
 
@@ -331,10 +385,16 @@ def delete_retired_tabs(sh: gspread.Spreadsheet) -> list[str]:
     return deleted
 
 
-def append_run_log(sh: gspread.Spreadsheet, rows_out: int, duration_s: float, message: str) -> None:
+def append_run_log(
+    sh: gspread.Spreadsheet,
+    rows_out: int,
+    duration_s: float,
+    message: str,
+    run_type: str = "aggregate",
+) -> None:
     ws = sh.worksheet("run_log")
     now = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    row = [now, "aggregate", "", "aggregate", "ok", "", rows_out, round(duration_s, 3), message]
+    row = [now, run_type, "", "aggregate", "ok", "", rows_out, round(duration_s, 3), message]
     ws.append_row(row, value_input_option="RAW")
 
 

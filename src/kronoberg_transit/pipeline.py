@@ -347,7 +347,10 @@ def download_hf_dataset(repo_id: str, token: str, local_dir: Path) -> Path:
     return local_dir / "data"
 
 
-def rebuild_sheet(sh, warehouse_dir: Path, run_log: RunLog) -> None:
+def rebuild_sheet(sh, warehouse_dir: Path) -> None:
+    """Rebuilds every tab and appends exactly one run_log row, with
+    run_type='pipeline' (D-021 Part 1: one row per event, not one from this
+    function plus another from the caller)."""
     t0 = time.monotonic()
     con = duckdb.connect()
     aggregate.build_tables(con, warehouse_dir=warehouse_dir)
@@ -359,10 +362,7 @@ def rebuild_sheet(sh, warehouse_dir: Path, run_log: RunLog) -> None:
     deleted = aggregate.delete_retired_tabs(sh)
     duration = time.monotonic() - t0
     message = f"tabs rebuilt: {counts}; retired tabs deleted: {deleted}"
-    aggregate.append_run_log(sh, sum(counts.values()), duration, message)
-    run_log.add(
-        "aggregate", "ok", rows_out=sum(counts.values()), duration_s=duration, message=message
-    )
+    aggregate.append_run_log(sh, sum(counts.values()), duration, message, run_type="pipeline")
     print(f"Rebuilt {len(aggregate.TABS)} tabs: {counts}")
 
 
@@ -432,8 +432,7 @@ def main() -> int:
         if not any_failed:
             local_dl_dir = Path("data/tmp/hf_download")
             hf_warehouse_dir = download_hf_dataset(repo_id, hf_token, local_dl_dir)
-            rebuild_sheet(sh, hf_warehouse_dir, run_log)
-            run_log.flush_to_sheet(sh)
+            rebuild_sheet(sh, hf_warehouse_dir)
         else:
             print("Skipping Sheet rebuild: a date failed this run.")
     else:

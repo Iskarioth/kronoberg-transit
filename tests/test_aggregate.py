@@ -19,8 +19,11 @@ routes/stops/feed_quality/feed_gaps are kept in full for these three dates.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import kronoberg_transit.aggregate as agg
@@ -276,3 +279,94 @@ def test_pattern_tie_broken_deterministically():
         ).fetchone()[0]
         assert label == "873 · Värnamo station – Ljungby terminal"
         con.close()
+
+
+# --------------------------------------------------------------------------
+# D-021 Part 1: one run_log row per event, stable row order, partition
+# schema consistency
+# --------------------------------------------------------------------------
+
+
+def _write_partition(table_dir: Path, service_date: str, schema: pa.Schema) -> None:
+    part_dir = table_dir / f"service_date={service_date}"
+    part_dir.mkdir(parents=True)
+    table = pa.Table.from_pylist([], schema=schema)
+    pq.write_table(table, part_dir / "part-0.parquet")
+
+
+def test_check_partition_schemas_passes_when_consistent(tmp_path):
+    schema = pa.schema([("trip_id", pa.string()), ("route_id", pa.string())])
+    table_dir = tmp_path / "trips"
+    _write_partition(table_dir, "2026-09-01", schema)
+    _write_partition(table_dir, "2026-09-02", schema)
+    agg.check_partition_schemas(tmp_path)  # does not raise
+
+
+def test_check_partition_schemas_detects_type_mismatch(tmp_path):
+    table_dir = tmp_path / "trips"
+    _write_partition(
+        table_dir, "2026-09-01", pa.schema([("trip_id", pa.string()), ("route_id", pa.string())])
+    )
+    _write_partition(
+        table_dir, "2026-09-02", pa.schema([("trip_id", pa.string()), ("route_id", pa.int64())])
+    )
+    with pytest.raises(AssertionError, match="Partition schema mismatch"):
+        agg.check_partition_schemas(tmp_path)
+
+
+def test_check_partition_schemas_detects_missing_column(tmp_path):
+    table_dir = tmp_path / "trips"
+    _write_partition(
+        table_dir, "2026-09-01", pa.schema([("trip_id", pa.string()), ("route_id", pa.string())])
+    )
+    _write_partition(table_dir, "2026-09-02", pa.schema([("trip_id", pa.string())]))
+    with pytest.raises(AssertionError, match="Partition schema mismatch"):
+        agg.check_partition_schemas(tmp_path)
+
+
+def test_network_monthly_sorted_by_key_columns(con):
+    _, rows = agg._table_values(con, "network_monthly")
+    cols = [d[0] for d in con.execute("SELECT * FROM network_monthly LIMIT 0").description]
+    key_idxs = [cols.index(c) for c in agg.SORT_KEYS["network_monthly"]]
+    keys = [tuple(row[i] for i in key_idxs) for row in rows]
+    assert keys == sorted(keys)
+
+
+def test_route_daily_sorted_by_key_columns(con):
+    _, rows = agg._table_values(con, "route_daily")
+    cols = [d[0] for d in con.execute("SELECT * FROM route_daily LIMIT 0").description]
+    key_idxs = [cols.index(c) for c in agg.SORT_KEYS["route_daily"]]
+    keys = [tuple(row[i] for i in key_idxs) for row in rows]
+    assert keys == sorted(keys)
+
+
+def test_write_csv_and_table_values_agree_on_order(con, tmp_path):
+    """The Sheet-write path (_table_values) and the CSV-write path
+    (write_csv) must produce the same row order from the same table."""
+    import csv
+
+    agg.write_csv(con, "route_monthly", tmp_path)
+    with (tmp_path / "route_monthly.csv").open(newline="", encoding="utf-8") as f:
+        csv_rows = list(csv.reader(f))[1:]
+
+    _, table_rows = agg._table_values(con, "route_monthly")
+    assert len(csv_rows) == len(table_rows)
+    cols = [d[0] for d in con.execute("SELECT * FROM route_monthly LIMIT 0").description]
+    key_idxs = [cols.index(c) for c in agg.SORT_KEYS["route_monthly"]]
+    csv_keys = [tuple(r[i] for i in key_idxs) for r in csv_rows]
+    table_keys = [tuple(str(r[i]) for i in key_idxs) for r in table_rows]
+    assert csv_keys == table_keys
+
+
+def test_append_run_log_default_run_type_is_aggregate():
+    sh = MagicMock()
+    agg.append_run_log(sh, rows_out=10, duration_s=1.5, message="ok")
+    row = sh.worksheet.return_value.append_row.call_args.args[0]
+    assert row[1] == "aggregate"
+
+
+def test_append_run_log_explicit_run_type():
+    sh = MagicMock()
+    agg.append_run_log(sh, rows_out=10, duration_s=1.5, message="ok", run_type="pipeline")
+    row = sh.worksheet.return_value.append_row.call_args.args[0]
+    assert row[1] == "pipeline"
