@@ -52,6 +52,21 @@ def local_hour_labels(svc_date: date) -> list[int]:
     raise RuntimeError(f"23-hour day {svc_date} but no skipped local hour found")
 
 
+def _midnight_utcoffset(d: date) -> timedelta:
+    return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=STOCKHOLM).utcoffset()
+
+
+def is_dst_adjacent(svc_date: date) -> bool:
+    """True when Europe/Stockholm's UTC offset changes on svc_date itself or
+    on svc_date + 1 day (D-020/D-021): the pipeline treats such a service
+    date as daylight-saving-adjacent, since scheduled-time conversions near
+    a change are not yet verified (D-011, D-020)."""
+    d0, d1, d2 = svc_date, svc_date + timedelta(days=1), svc_date + timedelta(days=2)
+    return _midnight_utcoffset(d0) != _midnight_utcoffset(d1) or _midnight_utcoffset(
+        d1
+    ) != _midnight_utcoffset(d2)
+
+
 def scheduled_time_utc(svc_date: date, hms: str) -> int | None:
     """GTFS spec rule for a HH:MM:SS service-day time -> UTC unix timestamp:
     noon Europe/Stockholm on the service date, minus 12h, plus HH:MM:SS. This

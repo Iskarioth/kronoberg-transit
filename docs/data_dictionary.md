@@ -180,12 +180,18 @@ D+1 window is the right one for judging D's trips.
 
 ### `run_log`
 
-Unchanged. `run_type = aggregate` for a publishing-layer run.
+`run_type = aggregate` for a publishing-layer run; `run_type = pipeline` for a daily
+pipeline run (D-020). A pipeline run appends one row per service date it attempts
+(`stage = transform`) and, if it rebuilds the Sheet, one `stage = aggregate` row (from
+the same code path as a standalone `aggregate` run, so that row's own `run_type` is
+`aggregate`, not `pipeline`). A date blocked by the daylight-saving guard (D-020,
+D-021) gets a `stage = transform`, `status = error` row naming the date and the reason,
+instead of being silently skipped.
 
 | Column | Type | Description |
 |---|---|---|
 | run_ts_utc | timestamp (UTC, ISO 8601) | When the run occurred |
-| run_type | string | e.g. `setup`, `smoke-ci`, `aggregate` |
+| run_type | string | e.g. `setup`, `smoke-ci`, `aggregate`, `pipeline` |
 | service_date | date (ISO `YYYY-MM-DD`) | Service date the run processed, if applicable |
 | stage | string | Pipeline stage name |
 | status | string | `ok`, `error`, etc. |
@@ -194,14 +200,26 @@ Unchanged. `run_type = aggregate` for a publishing-layer run.
 | duration_s | float | Stage duration in seconds |
 | message | string | Free-text status message |
 
+## Hugging Face dataset layout
+
+The dataset (`HF_DATASET_REPO`, e.g. `<user>/kronoberg-transit-punctuality`) is the
+warehouse of record (D-020). `kronoberg_transit.pipeline` uploads each service date's
+six table partitions in a single commit, at the same paths as the local warehouse
+layout below, under a `data/` prefix:
+`data/<table>/service_date=YYYY-MM-DD/part-0.parquet`. Commit message:
+`data: add service date YYYY-MM-DD`. Re-uploading a date replaces its commit content at
+that path; it never duplicates rows. The dataset card (`README.md`) is never modified
+or overwritten by the pipeline. `kronoberg_transit.aggregate` reads a local mirror of
+the dataset's `data/` folder, downloaded fresh each pipeline run.
+
 ## Parquet schema (Hugging Face warehouse)
 
 Built by `kronoberg_transit.transform` (D-012). Local path today is `data/warehouse/`
-(gitignored); the same layout is uploaded to Hugging Face unchanged. Every table is
-partitioned by `service_date`, one file per date:
-`data/warehouse/<table>/service_date=YYYY-MM-DD/part-0.parquet`. Re-running a date
-overwrites that date's partition; it never duplicates rows. All timestamps are naive
-`TIMESTAMP` columns holding UTC instants (no timezone-aware type), per CLAUDE.md's
+(gitignored); the same layout is uploaded to Hugging Face unchanged (see "Hugging Face
+dataset layout" above). Every table is partitioned by `service_date`, one file per
+date: `data/warehouse/<table>/service_date=YYYY-MM-DD/part-0.parquet`. Re-running a
+date overwrites that date's partition; it never duplicates rows. All timestamps are
+naive `TIMESTAMP` columns holding UTC instants (no timezone-aware type), per CLAUDE.md's
 "store timestamps in UTC" rule. `agency.txt` and `attributions.txt` are read from the
 same-date static schedule alongside the other GTFS files, to determine trip scope
 (D-013).

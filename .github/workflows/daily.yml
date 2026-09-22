@@ -1,0 +1,57 @@
+name: daily
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dates:
+        description: "Explicit date or range 'A..B' (YYYY-MM-DD); overrides auto-selection"
+        required: false
+        type: string
+      max_dates:
+        description: "Maximum number of dates to process this run"
+        required: false
+        type: string
+      skip_sheet:
+        description: "Don't touch the Google Sheet"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Write Google service account file
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/sa.json"
+
+      - name: Run the daily pipeline
+        env:
+          TRAFIKLAB_KODA_KEY: ${{ secrets.TRAFIKLAB_KODA_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
+          GOOGLE_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/sa.json
+          GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+        run: |
+          uv run python -m kronoberg_transit.pipeline \
+            ${{ inputs.dates && format('--dates {0}', inputs.dates) || '' }} \
+            ${{ inputs.max_dates && format('--max-dates {0}', inputs.max_dates) || '' }} \
+            ${{ inputs.skip_sheet == 'true' && '--skip-sheet' || '' }}

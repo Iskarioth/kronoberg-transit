@@ -18,6 +18,13 @@ KoDa archive (raw, never stored by us)
   → Looker Studio (public dashboard)
 ```
 
+`kronoberg_transit.pipeline` runs this end to end for one or more service dates: fetch,
+transform, upload that date's partitions to the Hugging Face dataset, then rebuild the
+Sheet from the full dataset (D-020). A scheduled GitHub Actions workflow
+(`.github/workflows/daily.yml`) runs it once a day, picking up the dates missing from
+the dataset. A service date that is daylight-saving-adjacent is skipped until D-021
+settles scheduled-time handling near a change.
+
 Metric definitions live in `docs/definitions.md`. That file is the source of truth.
 Design decisions live in `docs/decisions.md`.
 
@@ -77,6 +84,7 @@ uv sync                                  # install/update dependencies
 uv run pytest                            # tests
 uv run ruff check . && uv run ruff format .
 uv run --env-file .env python scripts/<script>.py
+uv run --env-file .env python -m kronoberg_transit.pipeline   # the daily pipeline
 ```
 
 ## Code conventions
