@@ -38,7 +38,7 @@ WAREHOUSE_DIR = Path("data/warehouse")
 LOG_DIR = Path("data/logs")
 SQL_DIR = Path(__file__).resolve().parent / "sql"
 
-TABLES = ["trips", "stop_events", "routes", "stops", "feed_quality"]
+TABLES = ["trips", "stop_events", "routes", "stops", "feed_quality", "feed_gaps"]
 
 # DuckDB memory bound: every connection this module opens gets a memory_limit
 # and a spill (temp_directory) so it pages large intermediate tables to disk
@@ -244,6 +244,28 @@ def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
         )
     )
 
+    n_bad_gap_len = con.execute("SELECT COUNT(*) FROM feed_gaps WHERE gap_s <= 300").fetchone()[0]
+    checks.append(("every feed_gaps row has gap_s > 300", n_bad_gap_len == 0))
+
+    n_overlapping_gaps = con.execute(
+        "SELECT COUNT(*) FROM ("
+        "  SELECT gap_start_utc, LAG(gap_end_utc) OVER (ORDER BY gap_start_utc) AS prev_end"
+        "  FROM feed_gaps"
+        ") WHERE prev_end IS NOT NULL AND gap_start_utc < prev_end"
+    ).fetchone()[0]
+    checks.append(("feed_gaps windows don't overlap within a date", n_overlapping_gaps == 0))
+
+    n_bad_outage_flag = con.execute(
+        "SELECT COUNT(*) FROM trips "
+        "WHERE (no_data_in_outage IS NOT NULL) != (trip_status = 'no_realtime_data')"
+    ).fetchone()[0]
+    checks.append(
+        (
+            "trips.no_data_in_outage is non-null exactly when trip_status = no_realtime_data",
+            n_bad_outage_flag == 0,
+        )
+    )
+
     failed = [name for name, ok in checks if not ok]
     if failed:
         raise AssertionError(f"Hard checks failed: {failed}")
@@ -334,6 +356,26 @@ def run_transform(svc_date: str) -> dict:
             n_dedup = con.execute("SELECT COUNT(*) FROM rows_dedup").fetchone()[0]
             s.rows_in, s.rows_out = n_raw, n_dedup
 
+        with log.timed_stage("feed_gaps") as s:
+            window_start_utc = scheduled_time_utc_py(svc_date_obj, "00:00:00")
+            if next_day_hours:
+                window_end_hms = f"{24 + max(next_day_hours) + 1:02d}:00:00"
+            else:
+                window_end_hms = "24:00:00"
+            window_end_utc = scheduled_time_utc_py(svc_date_obj, window_end_hms)
+            con.execute(
+                render_sql(
+                    "feed_gaps.sql",
+                    svc_date=svc_date,
+                    feed=FEED,
+                    window_start_utc=window_start_utc,
+                    window_end_utc=window_end_utc,
+                )
+            )
+            n_gaps = con.execute("SELECT COUNT(*) FROM feed_gaps").fetchone()[0]
+            s.rows_out = n_gaps
+            s.message = f"window {window_start_utc}..{window_end_utc}, {n_gaps} outages"
+
         with log.timed_stage("held_values") as s:
             con.execute(render_sql("held_values.sql", date_str=date_str_compact))
             n_ignored_prior = con.execute(
@@ -387,6 +429,7 @@ def run_transform(svc_date: str) -> dict:
                 "stop_events": write_partition(con, "stop_events", "stop_events", svc_date),
                 "routes": write_partition(con, "routes_out", "routes", svc_date),
                 "stops": write_partition(con, "stops_out", "stops", svc_date),
+                "feed_gaps": write_partition(con, "feed_gaps", "feed_gaps", svc_date),
             }
             write_feed_quality_partition(feed_quality_row, svc_date)
             counts["feed_quality"] = 1

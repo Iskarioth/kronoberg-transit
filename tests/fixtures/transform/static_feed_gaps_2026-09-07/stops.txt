@@ -1,0 +1,3 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station,platform_code
+9022007064159001,Rönnvägen,56.818186,13.902362,0,,
+9022007080418002,Notteryd,56.825677,13.903538,0,,

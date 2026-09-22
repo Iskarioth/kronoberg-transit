@@ -1,0 +1,5 @@
+trip_id,arrival_time,departure_time,stop_id,stop_sequence,stop_headsign,pickup_type,drop_off_type,shape_dist_traveled,timepoint,pickup_booking_rule_id,drop_off_booking_rule_id
+TRIP_INSIDE_OUTAGE,01:00:00,01:00:00,9022007064159001,1,,0,0,,1,,
+TRIP_INSIDE_OUTAGE,01:30:00,01:30:00,9022007080418002,2,,0,0,,1,,
+TRIP_OUTSIDE_OUTAGE,00:20:05,00:20:05,9022007064159001,1,,0,0,,1,,
+TRIP_OUTSIDE_OUTAGE,00:20:10,00:20:10,9022007080418002,2,,0,0,,1,,

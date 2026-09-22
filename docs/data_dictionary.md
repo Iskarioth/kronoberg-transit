@@ -107,6 +107,7 @@ same-date static schedule).
 | trip_status | string | `out_of_scope` \| `in_feed` \| `cancelled` \| `no_realtime_data`, checked in that order (D-009, D-010, D-013) |
 | first_seen_utc | timestamp, nullable | Earliest TripUpdates snapshot in which the trip appeared, matched on `trip_id` + `start_date` = this service date (D-011). Null if the trip never appeared in TripUpdates, regardless of scope |
 | last_seen_utc | timestamp, nullable | Latest such snapshot. Null if the trip never appeared in TripUpdates, regardless of scope |
+| no_data_in_outage | bool, nullable | True when `trip_status = no_realtime_data` and the trip's scheduled span (`scheduled_first_departure_utc` to `scheduled_last_arrival_utc`) falls entirely inside one `feed_gaps` window. False for other `no_realtime_data` trips. Null for every other `trip_status` (D-016) |
 
 ### `stop_events`
 
@@ -179,3 +180,19 @@ only (not the extra D+1 hours read per D-011).
 | gaps_over_300s | int | Count of gaps over 300 seconds |
 | local_hours_without_snapshots | string | Comma-separated local hours (00-23) with no snapshots that day |
 | next_day_hours_read | string | Comma-separated D+1 local hours read for this run, per D-011 |
+
+### `feed_gaps`
+
+One row per feed outage (D-016): a stretch of more than 300 s with no TripUpdates
+snapshot, computed over the full snapshot timeline the transform reads for the service
+date (D's own hours plus any D+1 hours read, deduplicated by header timestamp, per
+D-011). Unlike `feed_quality`, this spans both D's own archives and the D+1 hours.
+
+| Column | Type | Description |
+|---|---|---|
+| service_date | date | Service date this row belongs to |
+| feed | string | Feed name (`TripUpdates`) |
+| gap_start_utc | timestamp | Start of the gap: the snapshot before it (or the window start, D's local midnight, for a `before_first` gap) |
+| gap_end_utc | timestamp | End of the gap: the snapshot after it (or the window end, the end of the last hour read, for an `after_last` gap) |
+| gap_s | int | `gap_end_utc - gap_start_utc` in seconds. Always > 300 |
+| kind | string | `between` (two consecutive snapshots) \| `before_first` (window start to the first snapshot) \| `after_last` (the last snapshot to the window end) |

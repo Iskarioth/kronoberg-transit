@@ -93,6 +93,17 @@ def build_pipeline(svc_date: str, static_dir: Path, own_parquet: Path, next_day_
             glob_list=duckdb_list_literal([own_parquet, next_day_parquet]),
         )
     )
+    from kronoberg_transit.time_utils import scheduled_time_utc as _scheduled_time_utc_py
+
+    con.execute(
+        render_sql(
+            "feed_gaps.sql",
+            svc_date=svc_date,
+            feed="TripUpdates",
+            window_start_utc=_scheduled_time_utc_py(svc_date_obj, "00:00:00"),
+            window_end_utc=_scheduled_time_utc_py(svc_date_obj, "24:00:00"),
+        )
+    )
     con.execute(render_sql("held_values.sql", date_str=date_str_compact))
 
     from kronoberg_transit.time_utils import scheduled_time_utc
