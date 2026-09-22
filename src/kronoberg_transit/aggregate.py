@@ -95,8 +95,8 @@ STOP_SET_KEY_COLUMNS = {
 }
 
 
-def build_tables(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute(render_sql("aggregate_base.sql", warehouse_dir=WAREHOUSE_DIR.as_posix()))
+def build_tables(con: duckdb.DuckDBPyConnection, warehouse_dir: Path = WAREHOUSE_DIR) -> None:
+    con.execute(render_sql("aggregate_base.sql", warehouse_dir=warehouse_dir.as_posix()))
     con.execute(render_sql("aggregate_network_monthly.sql"))
     con.execute(render_sql("aggregate_route_monthly.sql"))
     con.execute(render_sql("aggregate_route_daily.sql"))
@@ -343,12 +343,17 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Write CSVs to data/publish/ instead of the Sheet"
     )
+    parser.add_argument(
+        "--warehouse-dir",
+        default=str(WAREHOUSE_DIR),
+        help=f"Warehouse input directory (default: {WAREHOUSE_DIR})",
+    )
     args = parser.parse_args()
 
     t0 = time.monotonic()
     con = duckdb.connect()
     print("Building publishing tables from the warehouse...")
-    build_tables(con)
+    build_tables(con, warehouse_dir=Path(args.warehouse_dir))
     run_consistency_checks(con)
 
     if args.dry_run:

@@ -24,9 +24,9 @@ from pathlib import Path
 import duckdb
 
 from kronoberg_transit.fetch_koda import fetch_day
-from kronoberg_transit.gtfs_rt import HOURS, stage_date
+from kronoberg_transit.gtfs_rt import stage_date
 from kronoberg_transit.static_schedule import load_static_gtfs
-from kronoberg_transit.time_utils import STOCKHOLM
+from kronoberg_transit.time_utils import STOCKHOLM, local_hour_labels
 from kronoberg_transit.time_utils import scheduled_time_utc as scheduled_time_utc_py
 
 OPERATOR = "krono"
@@ -137,7 +137,9 @@ def duckdb_list_literal(paths: list[Path]) -> str:
 
 def compute_next_day_cutoff_hours(con: duckdb.DuckDBPyConnection, svc_date_obj: date) -> list[int]:
     """The D+1 local hours to read: none if D's last scheduled arrival plus
-    2h still falls on D itself, otherwise hours 0..cutoff_hour inclusive."""
+    2h still falls on D itself, otherwise every D+1 hour label that exists
+    (local_hour_labels) up to and including the cutoff hour. Never returns a
+    label D+1 doesn't have (D-011's spring-change gap)."""
     max_arr_hms = con.execute("SELECT MAX(arrival_time) FROM scheduled_stop_times").fetchone()[0]
     last_arrival_utc = scheduled_time_utc_py(svc_date_obj, max_arr_hms)
     cutoff_utc = datetime.fromtimestamp(last_arrival_utc, tz=UTC) + timedelta(hours=2)
@@ -151,7 +153,7 @@ def compute_next_day_cutoff_hours(con: duckdb.DuckDBPyConnection, svc_date_obj: 
         raise RuntimeError(
             f"D+1 cutoff {cutoff_local.isoformat()} falls beyond {next_day}, unsupported"
         )
-    return list(range(cutoff_local.hour + 1))
+    return [h for h in local_hour_labels(next_day) if h <= cutoff_local.hour]
 
 
 def ensure_hours_fetched(operator: str, feed: str, svc_date: str, hours, dest_dir: Path) -> None:
@@ -278,9 +280,13 @@ def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
 
 
 def write_partition(
-    con: duckdb.DuckDBPyConnection, table_sql_name: str, table: str, svc_date: str
+    con: duckdb.DuckDBPyConnection,
+    table_sql_name: str,
+    table: str,
+    svc_date: str,
+    warehouse_dir: Path = WAREHOUSE_DIR,
 ) -> int:
-    out_dir = WAREHOUSE_DIR / table / f"service_date={svc_date}"
+    out_dir = warehouse_dir / table / f"service_date={svc_date}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "part-0.parquet"
     if out_path.exists():
@@ -291,12 +297,13 @@ def write_partition(
     return con.execute(f"SELECT COUNT(*) FROM {table_sql_name}").fetchone()[0]
 
 
-def run_transform(svc_date: str) -> dict:
+def run_transform(svc_date: str, warehouse_dir: Path = WAREHOUSE_DIR) -> dict:
     svc_date_obj = date.fromisoformat(svc_date)
     next_day = (svc_date_obj + timedelta(days=1)).isoformat()
     date_int = int(svc_date.replace("-", ""))
     date_str_compact = svc_date.replace("-", "")
     weekday_col = svc_date_obj.strftime("%A").lower()
+    own_hours = local_hour_labels(svc_date_obj)
 
     log = RunLog(svc_date)
     print(f"Transforming {OPERATOR}/{FEED} for {svc_date}")
@@ -331,16 +338,18 @@ def run_transform(svc_date: str) -> dict:
         next_day_hours = compute_next_day_cutoff_hours(con, svc_date_obj)
 
         own_dir = RAW_DIR / OPERATOR / FEED / svc_date
-        ensure_hours_fetched(OPERATOR, FEED, svc_date, list(HOURS), own_dir)
+        ensure_hours_fetched(OPERATOR, FEED, svc_date, own_hours, own_dir)
         if next_day_hours:
             next_dir = RAW_DIR / OPERATOR / FEED / next_day
             ensure_hours_fetched(OPERATOR, FEED, next_day, next_day_hours, next_dir)
 
         own_interim = INTERIM_DIR / svc_date / "own"
         with log.timed_stage("stage_own_archives") as s:
-            present, missing = stage_date(OPERATOR, FEED, svc_date, own_interim, hours=HOURS)
+            present, missing = stage_date(OPERATOR, FEED, svc_date, own_interim, hours=own_hours)
             s.rows_out = len(present)
-            s.message = f"{len(present)}/24 own hours staged, missing: {missing or 'none'}"
+            s.message = (
+                f"{len(present)}/{len(own_hours)} own hours staged, missing: {missing or 'none'}"
+            )
 
         next_interim = INTERIM_DIR / svc_date / "next_day"
         with log.timed_stage("stage_next_day_archives") as s:
@@ -429,17 +438,23 @@ def run_transform(svc_date: str) -> dict:
         with log.timed_stage("run_hard_checks"):
             run_hard_checks(con)
 
-        feed_quality_row = build_feed_quality(con, svc_date, own_interim, next_day_hours, log)
+        feed_quality_row = build_feed_quality(
+            con, svc_date, own_interim, own_hours, next_day_hours, log
+        )
 
         with log.timed_stage("write_partitions") as s:
             counts = {
-                "trips": write_partition(con, "trips", "trips", svc_date),
-                "stop_events": write_partition(con, "stop_events", "stop_events", svc_date),
-                "routes": write_partition(con, "routes_out", "routes", svc_date),
-                "stops": write_partition(con, "stops_out", "stops", svc_date),
-                "feed_gaps": write_partition(con, "feed_gaps", "feed_gaps", svc_date),
+                "trips": write_partition(con, "trips", "trips", svc_date, warehouse_dir),
+                "stop_events": write_partition(
+                    con, "stop_events", "stop_events", svc_date, warehouse_dir
+                ),
+                "routes": write_partition(con, "routes_out", "routes", svc_date, warehouse_dir),
+                "stops": write_partition(con, "stops_out", "stops", svc_date, warehouse_dir),
+                "feed_gaps": write_partition(
+                    con, "feed_gaps", "feed_gaps", svc_date, warehouse_dir
+                ),
             }
-            write_feed_quality_partition(feed_quality_row, svc_date)
+            write_feed_quality_partition(feed_quality_row, svc_date, warehouse_dir)
             counts["feed_quality"] = 1
             s.rows_out = sum(counts.values())
             s.message = str(counts)
@@ -462,6 +477,7 @@ def build_feed_quality(
     con: duckdb.DuckDBPyConnection,
     svc_date: str,
     own_interim: Path,
+    own_hours: list[int],
     next_day_hours: list[int],
     log: RunLog,
 ) -> dict:
@@ -483,7 +499,7 @@ def build_feed_quality(
         hours_present = {
             r[0] for r in con.execute("SELECT DISTINCT hour FROM all_snapshot_files_own").fetchall()
         }
-        hours_without = sorted(set(HOURS) - hours_present)
+        hours_without = sorted(set(own_hours) - hours_present)
 
         n_out_of_scope_in_feed = con.execute(
             "SELECT COUNT(*) FROM trips WHERE trip_status = 'out_of_scope' AND first_seen_utc IS NOT NULL"
@@ -515,11 +531,13 @@ def build_feed_quality(
     }
 
 
-def write_feed_quality_partition(row: dict, svc_date: str) -> None:
+def write_feed_quality_partition(
+    row: dict, svc_date: str, warehouse_dir: Path = WAREHOUSE_DIR
+) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    out_dir = WAREHOUSE_DIR / "feed_quality" / f"service_date={svc_date}"
+    out_dir = warehouse_dir / "feed_quality" / f"service_date={svc_date}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "part-0.parquet"
     table = pa.Table.from_pylist([row])
@@ -529,9 +547,14 @@ def write_feed_quality_partition(row: dict, svc_date: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("date", help="Service date to process (YYYY-MM-DD)")
+    parser.add_argument(
+        "--warehouse-dir",
+        default=str(WAREHOUSE_DIR),
+        help=f"Warehouse output directory (default: {WAREHOUSE_DIR})",
+    )
     args = parser.parse_args()
 
-    result = run_transform(args.date)
+    result = run_transform(args.date, warehouse_dir=Path(args.warehouse_dir))
     print(f"\nDone. {result['n_scheduled_trips']} trips scheduled on {args.date}.")
     print(f"D+1 hours read: {result['next_day_hours'] or 'none'}")
     print(

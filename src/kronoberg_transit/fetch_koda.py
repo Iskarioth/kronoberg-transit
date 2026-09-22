@@ -20,7 +20,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import date as _date
 from pathlib import Path
+
+from kronoberg_transit.time_utils import local_hour_labels
 
 BASE = "https://api.koda.trafiklab.se/KoDa/api/v2"
 SEVEN_ZIP_MAGIC = b"\x37\x7a\xbc\xaf\x27\x1c"
@@ -28,7 +31,6 @@ POLL_SECONDS = 30
 MAX_WAIT_MINUTES = 20
 TIMEOUT = 120
 MAX_IN_FLIGHT = 2
-HOURS = range(24)
 
 
 class FetchError(Exception):
@@ -95,16 +97,21 @@ def fetch_day(
     key: str,
     dest_dir: Path,
     max_in_flight: int = MAX_IN_FLIGHT,
-    hours=HOURS,
+    hours=None,
 ) -> dict[int, Path | Exception]:
-    """Fetch the requested hourly archives (default all 24) for a service date
-    into dest_dir.
+    """Fetch the requested hourly archives for a service date into dest_dir.
+
+    Default (hours=None) is the local Stockholm hour labels that exist on
+    this date (local_hour_labels) - never a label KoDa doesn't have, and
+    never missing a label the date does have.
 
     Resumable: hours already present in dest_dir are skipped. At most
     max_in_flight requests run concurrently (CLAUDE.md rule 4). Returns a
     {hour: path_or_exception} map so the caller can report partial failures
     without losing the hours that did succeed.
     """
+    if hours is None:
+        hours = local_hour_labels(_date.fromisoformat(date))
     results: dict[int, Path | Exception] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_in_flight) as pool:
         futures = {
@@ -155,7 +162,10 @@ def main() -> int:
     parser.add_argument(
         "--hours",
         default=None,
-        help="Subset of hours to fetch, e.g. '3', '0,4,7' or '0-3,5,7-9' (default: all 24)",
+        help=(
+            "Subset of hours to fetch, e.g. '3', '0,4,7' or '0-3,5,7-9' "
+            "(default: the local hour labels that exist on this date)"
+        ),
     )
     args = parser.parse_args()
 
@@ -163,7 +173,11 @@ def main() -> int:
     if not key:
         sys.exit("Set TRAFIKLAB_KODA_KEY in your environment first.")
 
-    hours = list(HOURS) if args.hours is None else parse_hours(args.hours)
+    hours = (
+        local_hour_labels(_date.fromisoformat(args.date))
+        if args.hours is None
+        else parse_hours(args.hours)
+    )
 
     dest_dir = Path(args.out) / args.operator / args.feed / args.date
     print(

@@ -21,6 +21,37 @@ def gtfs_hms_to_unix(svc_date: date, hms: str) -> int | None:
     return int(local_dt.timestamp())
 
 
+def local_hour_labels(svc_date: date) -> list[int]:
+    """The KoDa hour labels (00-23) that exist for a local Stockholm service
+    date.
+
+    A normal (24h) or autumn-change, fall-back (25h) day has all 24 labels:
+    on a fall-back day the repeated local hour's archive holds both real
+    occurrences of that hour, under one label. A spring-change,
+    spring-forward (23h) day omits the label for its skipped local hour
+    entirely - KoDa has no archive for it.
+    """
+    start_utc = datetime(
+        svc_date.year, svc_date.month, svc_date.day, 0, 0, 0, tzinfo=STOCKHOLM
+    ).astimezone(UTC)
+    next_day = svc_date + timedelta(days=1)
+    end_utc = datetime(
+        next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=STOCKHOLM
+    ).astimezone(UTC)
+    day_length_h = round((end_utc - start_utc).total_seconds() / 3600)
+
+    if day_length_h in (24, 25):
+        return list(range(24))
+    if day_length_h != 23:
+        raise RuntimeError(f"Unexpected Stockholm day length {day_length_h}h for {svc_date}")
+
+    for h in range(24):
+        probe = datetime(svc_date.year, svc_date.month, svc_date.day, h, 30, 0, tzinfo=STOCKHOLM)
+        if probe.astimezone(UTC).astimezone(STOCKHOLM).hour != h:
+            return [x for x in range(24) if x != h]
+    raise RuntimeError(f"23-hour day {svc_date} but no skipped local hour found")
+
+
 def scheduled_time_utc(svc_date: date, hms: str) -> int | None:
     """GTFS spec rule for a HH:MM:SS service-day time -> UTC unix timestamp:
     noon Europe/Stockholm on the service date, minus 12h, plus HH:MM:SS. This

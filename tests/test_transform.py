@@ -15,6 +15,8 @@ import duckdb
 import pytest
 
 from kronoberg_transit.transform import (
+    RunLog,
+    build_feed_quality,
     compute_next_day_cutoff_hours,
     duckdb_list_literal,
     render_sql,
@@ -230,6 +232,19 @@ def test_trip_with_no_realtime_data(con_2026_09_07):
         ("2026-09-07", "25:08:00", [0, 1, 2, 3]),
         # Last arrival well before midnight: cutoff (+2h) still on D itself.
         ("2026-09-07", "20:00:00", []),
+        # D-011 spring-change case: D+1 is 2026-03-29 (23h day, no local
+        # hour 02). The GTFS noon-anchor rule (scheduled_time_utc) adds
+        # 26:30:00 in fixed-offset UTC arithmetic from D's noon; because the
+        # spring change loses an hour of local wall-clock time on D+1, this
+        # lands at local 05:30 CEST, not the naively-expected 04:30. The
+        # cutoff window must read D+1 hours up to 05, but the returned list
+        # must never include 02, which doesn't exist.
+        ("2026-03-28", "26:30:00", [0, 1, 3, 4, 5]),
+        # D-011 autumn-change case: D+1 is 2025-10-26 (25h day). A last
+        # arrival of 24:30:00 (-> 00:30 local on D+1) plus 2h lands at 02:30
+        # local on D+1; hour 02's archive already holds both real
+        # occurrences of that local hour, so the label list is unaffected.
+        ("2025-10-25", "24:30:00", [0, 1, 2]),
     ],
 )
 def test_compute_next_day_cutoff_hours(svc_date, max_arrival_hms, expected_hours):
@@ -238,6 +253,40 @@ def test_compute_next_day_cutoff_hours(svc_date, max_arrival_hms, expected_hours
     con.execute("CREATE TABLE scheduled_stop_times AS SELECT ? AS arrival_time", [max_arrival_hms])
     hours = compute_next_day_cutoff_hours(con, date.fromisoformat(svc_date))
     assert hours == expected_hours
+
+
+def test_feed_quality_never_lists_a_nonexistent_local_hour(tmp_path):
+    # 2026-03-29 is a spring-change (23h) day with no local hour 02 archive
+    # (D-020/D-011). own_hours (as computed by run_transform) must already
+    # exclude label 02, so local_hours_without_snapshots can never list it -
+    # built from one real staged hour (cut from the cached KoDa archive) so
+    # only hour 00 is "present" and every other real hour is "without".
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "transform"
+        / "feed_quality_2026-03-29_hour00.parquet"
+    )
+    own_interim = tmp_path / "own"
+    own_interim.mkdir()
+    (own_interim / "00.parquet").write_bytes(fixture.read_bytes())
+
+    con = duckdb.connect()
+    con.execute("SET TimeZone='UTC'")
+    con.execute("CREATE TABLE trips (trip_status VARCHAR, first_seen_utc TIMESTAMP)")
+
+    from kronoberg_transit.time_utils import local_hour_labels
+
+    own_hours = local_hour_labels(date(2026, 3, 29))
+    assert 2 not in own_hours
+
+    log = RunLog("2026-03-29")
+    row = build_feed_quality(con, "2026-03-29", own_interim, own_hours, [], log)
+
+    hours_without = row["local_hours_without_snapshots"].split(",")
+    assert "02" not in hours_without
+    assert "00" not in hours_without  # hour 00 was staged, so it is present
+    assert set(hours_without) == {f"{h:02d}" for h in own_hours if h != 0}
 
 
 def test_trip_with_mismatched_start_date_is_ignored(con_2026_09_06):
