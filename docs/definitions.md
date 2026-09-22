@@ -42,9 +42,9 @@ Status labels:
 |---|---|---|
 | Delay | Observed time minus scheduled time, in seconds. Positive means late | FIXED |
 | Measurement point | Departure time at every stop except the final stop of a trip. Final-stop arrivals are excluded from punctuality and from coverage (D-008) | FIXED |
-| On time | −60 s ≤ delay ≤ +180 s | PROVISIONAL |
-| Early | Delay < −60 s. Early departures count as **not on time**: a bus leaving early strands passengers, which is worse than a late bus | PROVISIONAL |
-| Late | Delay > +180 s | PROVISIONAL |
+| On time | −60 s ≤ delay ≤ +180 s (D-018) | FIXED |
+| Early | Delay < −60 s. Early departures count as **not on time**: a bus leaving early strands passengers, which is worse than a late bus (D-018) | FIXED |
+| Late | Delay > +180 s (D-018) | FIXED |
 | Sensitivity | Every headline punctuality figure is also reported at +60 s and +300 s late thresholds, so results do not depend on one arbitrary cut-off. Early stays delay_s < −60 in both versions; on time is −60 ≤ delay_s ≤ +60 (or +300), and late is delay_s > +60 (or +300) | FIXED |
 | Hour of day | The local hour, in the reporting time zone, of a stop event's scheduled departure (D-017) | FIXED |
 | Station | Stop events are grouped by their stop's `parent_station`; a stop without one is its own station (D-017) | FIXED |

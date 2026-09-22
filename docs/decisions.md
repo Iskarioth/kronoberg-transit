@@ -542,3 +542,58 @@ warehouse.
   in it has a warehouse partition (D-015).
 - The Sensitivity row now states its inequalities explicitly. Its meaning is unchanged:
   only the late-side threshold moves.
+
+---
+
+## D-018 · 2026-09-22 · On-time thresholds fixed at −60 s to +180 s
+
+**Decision:** The On time, Early and Late definitions move from PROVISIONAL to FIXED,
+with their thresholds unchanged:
+
+- early is a delay below −60 s
+- on time is from −60 s to +180 s, both limits inclusive
+- late is above +180 s
+
+The +60 s and +300 s sensitivity versions stay as defined.
+
+**Reason:**
+
+- A late limit of three minutes is the common convention for Swedish bus
+  punctuality. Västtrafik counts a bus departure as on time when it leaves a timing
+  stop no more than 30 s early and no more than 3 minutes late (as reported by Partille
+  Tidning, March 2026). Roslagsbanan's departure punctuality uses the same window as this
+  project: a departure more than 1 minute early or more than 3 minutes late is off time
+  (Transdev Sverige quality report for 2024). Danish rail sets its punctuality limit just
+  under 3 minutes, because customer surveys show that is where passengers start to
+  experience a delay (Riksdagen report 2020/21:RFR5).
+- The early limit is 60 s rather than Västtrafik's 30 s, to leave room for the measured
+  lean of recorded times. Against GPS, recorded departures run a median 6 s earlier at
+  intermediate stops and 16 s earlier at first stops (D-007). A 30 s limit would count
+  part of that measurement lean as early running.
+- "Three minutes" can mean up to 3:00, or up to 3:59 if whole minutes are counted, as
+  Swedish rail statistics do: rail's five-minute limit is 5 minutes 59 seconds
+  (Trafikverket). The bus sources do not say which. This project uses the stricter
+  reading, 180 s.
+- These are the values set provisionally at the project's start. They are fixed on the
+  grounds above, not on the figures they produce.
+
+**Consequences:**
+
+- The hold in D-017 is lifted: figures computed with these thresholds can be presented
+  as results, subject to the reporting floor (D-014).
+- This project measures departures at every non-final stop (D-008). Operators such as
+  Västtrafik measure at timing stops only, so these figures are not directly comparable
+  with an operator's published punctuality. The write-up states this.
+- Whether the `krono` schedule marks timing stops (the GTFS `timepoint` field) is being
+  checked. A timing-stop view would be a separate decision.
+
+**Sources:**
+
+- Partille Tidning, "Här är de mest försenade busslinjerna i Partille", March 2026:
+  https://www.partilletidning.se/nyheter/har-ar-partilles-mest-forsenade-busslinjer.091caf51-c28e-4a75-a872-63a54ed28d68
+- Transdev Sverige AB, kvalitetsrapport järnvägstrafik 2024 (via ERA):
+  https://www.era.europa.eu/sites/default/files/2025-05/kvalitetsrapport%20%28era%29%20transdev%20sverige%20ab%20j%C3%A4rnv%C3%A4gstrafik%20f%C3%B6r%202024.pdf
+- Sveriges riksdag, Punktlighet för persontrafik på järnväg – en uppföljning (2020/21:RFR5):
+  https://www.riksdagen.se/sv/dokument-och-lagar/dokument/rapport-fran-riksdagen/punktlighet-for-persontrafik-pa-jarnvag-en_h80wrfr5/html/
+- Trafikverket, Järnkoll på persontågens punktlighet:
+  https://www.trafikverket.se/resa-och-trafik/jarnvag/jarnkoll--fakta-om-svensk-jarnvag/jarnkoll-pa-persontagens-punktlighet/
