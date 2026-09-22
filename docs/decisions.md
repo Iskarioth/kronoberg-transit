@@ -698,8 +698,9 @@ timetable clock time falls between 02:00 and 03:59 local on that date are marked
 `dst_ambiguous`. That covers times written 02:00–03:59 on that date's service, and
 26:00–27:59 on the previous date's service. They are excluded from punctuality and
 coverage and counted separately. Every service date also records how many stop events
-have a feed scheduled time that differs from the pipeline's outside that window. That
-count is expected to be zero. The date guard added in D-020 is removed.
+on matched trips have a feed scheduled time that differs from the pipeline's outside
+that window, and how many realtime trips match no scheduled trip. Both counts are
+expected to be zero. The date guard added in D-020 is removed.
 
 **Reason:**
 
@@ -715,18 +716,22 @@ count is expected to be zero. The date guard added in D-020 is removed.
   state and check than a spring-only exception.
 - The window is defined on the timetable's clock time, not on converted times, because
   that is where the ambiguity sits.
-- On 2025-10-25 the feed also tagged some after-midnight trips with the next service
-  date. The last-appearance rule (D-007) picked the correctly dated run, so published
-  delays were unaffected. A per-date count of schedule mismatches catches both kinds of
-  problem automatically. From 2026-09-01 to 2026-09-20 it is zero on every date.
+- On 2025-10-25 and 2025-10-26 the feed also tagged some after-midnight trips with a
+  start date on which their service does not run (about 50 trips each night). They
+  match no scheduled trip on that date, so they cannot produce a wrong delay. Instead,
+  their real service date loses those observations and counts the trips as having no
+  realtime data. A per-date count of unmatched realtime trips catches this; a per-date
+  count of schedule mismatches on matched trips catches differences like the spring
+  one. From 2026-09-01 to 2026-09-20 both counts are zero on every date.
 
 **Consequences:**
 
 - The Stop event status order gains `dst_ambiguous` after `skipped`. Coverage and
   Unobserved stop events exclude it.
-- data_quality reports `dst_ambiguous` departures and schedule-mismatch stop events per
-  date. A non-zero mismatch count marks that date's pipeline run as a warning rather than
-  stopping it, because the known cause (wrong service-date tags) does not reach
-  published delays.
+- data_quality reports `dst_ambiguous` departures, schedule-mismatch stop events and
+  unmatched realtime trips per date. A non-zero count of either of the last two marks
+  that date's pipeline run as a warning rather than stopping it, because neither known
+  cause produces wrong delays. Mislabelled trips show up instead as lower coverage on
+  their real service date, which the count explains.
 - The pipeline no longer refuses dates next to a daylight-saving change (D-020).
 - Everywhere else, scheduled times still follow the GTFS noon-minus-12-hours rule.
