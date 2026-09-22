@@ -230,6 +230,7 @@ stop_sequence)` - never `stop_id` alone, which can repeat on a looping trip.
 | last_stop_relationship | string, nullable | This stop's `schedule_relationship` (e.g. `SCHEDULED`, `SKIPPED`) at that same last snapshot. Null if never observed |
 | last_seen_utc | timestamp, nullable | Header timestamp of that last snapshot. Null if never observed |
 | in_scope | bool | Copied from this row's trip (`trips.in_scope`, D-013) |
+| is_timing_stop | bool | True when this stop's `stop_times.timepoint` in the same-date static schedule is `1` or empty (GTFS treats empty as an exact time); false when it is `0` (D-019) |
 | status | string, nullable | `out_of_scope` \| `cancelled` \| `skipped` \| `observed` \| `unobserved`, checked in that order (D-013, D-009). Null for `stop_position = final` (D-008) |
 | delay_s | int, nullable | `held_departure_utc - scheduled_departure_utc` in seconds. Set only when `status = observed`; null otherwise, including for final stops |
 

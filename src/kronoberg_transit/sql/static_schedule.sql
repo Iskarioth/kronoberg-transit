@@ -30,7 +30,8 @@ SELECT * FROM read_csv(
     types={
         'trip_id': 'VARCHAR', 'stop_id': 'VARCHAR',
         'arrival_time': 'VARCHAR', 'departure_time': 'VARCHAR',
-        'pickup_booking_rule_id': 'VARCHAR', 'drop_off_booking_rule_id': 'VARCHAR'
+        'pickup_booking_rule_id': 'VARCHAR', 'drop_off_booking_rule_id': 'VARCHAR',
+        'timepoint': 'VARCHAR'
     }
 );
 

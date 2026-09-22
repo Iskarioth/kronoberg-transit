@@ -1,0 +1,6 @@
+trip_id,arrival_time,departure_time,stop_id,stop_sequence,stop_headsign,pickup_type,drop_off_type,shape_dist_traveled,timepoint,pickup_booking_rule_id,drop_off_booking_rule_id
+76110000040138578,07:25:00,07:25:00,9022007081328002,1,"Bergvägen, Ljungby",3,1,0,,,
+76110000040138578,07:27:22,07:27:22,9022007081327001,2,"Bergvägen, Ljungby",3,3,1130.2,0,,
+76110000040138578,07:28:42,07:28:42,9022007081355001,3,"Bergvägen, Ljungby",3,3,1800.32,0,,
+76110000040138578,07:30:27,07:30:27,9022007081348001,4,"Bergvägen, Ljungby",3,3,2631.02,0,,
+76110000040138578,07:33:00,07:33:00,9022007081347001,5,"Bergvägen, Ljungby",1,3,3468.3,1,,

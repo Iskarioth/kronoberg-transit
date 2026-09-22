@@ -3,6 +3,9 @@
 -- unobserved (D-009) and applies to non-final stops only; final stops carry
 -- their held values and marker but no status (D-008). delay_s is set only
 -- when status = observed. in_scope is copied straight from the trip.
+-- is_timing_stop (D-019) is true when stop_times.timepoint is 1 or empty
+-- (GTFS treats empty as an exact time), false when it is 0; any other value
+-- leaves it null, which the "is_timing_stop is non-null" hard check catches.
 --
 -- Requires the `scheduled_time_utc(hms)` scalar UDF to be registered first,
 -- and the `trips` table to already exist.
@@ -37,7 +40,12 @@ WITH base AS (
         CASE WHEN sla.last_seen_ts IS NOT NULL
              THEN to_timestamp(sla.last_seen_ts)::TIMESTAMP END AS last_seen_utc,
         t.trip_status,
-        t.in_scope
+        t.in_scope,
+        CASE
+            WHEN st.timepoint = '1' THEN true
+            WHEN st.timepoint IS NULL OR st.timepoint = '' THEN true
+            WHEN st.timepoint = '0' THEN false
+        END AS is_timing_stop
     FROM scheduled_stop_times st
     JOIN scheduled_trips sched ON sched.trip_id = st.trip_id
     JOIN trip_stop_bounds b ON b.trip_id = st.trip_id
@@ -72,6 +80,7 @@ SELECT
     last_stop_relationship,
     last_seen_utc,
     in_scope,
+    is_timing_stop,
     status,
     CASE WHEN status = 'observed'
          THEN date_diff('second', scheduled_departure_utc, held_departure_utc)

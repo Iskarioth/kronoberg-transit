@@ -266,6 +266,11 @@ def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
         )
     )
 
+    n_null_timing_stop = con.execute(
+        "SELECT COUNT(*) FROM stop_events WHERE is_timing_stop IS NULL"
+    ).fetchone()[0]
+    checks.append(("stop_events.is_timing_stop is non-null on every row", n_null_timing_stop == 0))
+
     failed = [name for name, ok in checks if not ok]
     if failed:
         raise AssertionError(f"Hard checks failed: {failed}")
@@ -317,8 +322,11 @@ def run_transform(svc_date: str) -> dict:
             )
             n_scheduled = con.execute("SELECT COUNT(*) FROM scheduled_trips").fetchone()[0]
             check_single_operator_per_trip(con)
+            n_empty_timepoint = con.execute(
+                "SELECT COUNT(*) FROM scheduled_stop_times WHERE timepoint IS NULL OR timepoint = ''"
+            ).fetchone()[0]
             s.rows_out = n_scheduled
-            s.message = f"{n_scheduled} trips active on {svc_date}"
+            s.message = f"{n_scheduled} trips active on {svc_date}; {n_empty_timepoint} empty timepoint values"
 
         next_day_hours = compute_next_day_cutoff_hours(con, svc_date_obj)
 
