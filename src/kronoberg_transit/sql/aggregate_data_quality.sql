@@ -34,11 +34,14 @@ SELECT service_date,
 FROM feed_gaps_clipped
 GROUP BY service_date;
 
+-- Ties on gap_s broken by gap_start_utc (unique per service_date - clipped
+-- gap windows for a date never overlap), so this ORDER BY is a total order
+-- (D-019: previously incomplete - see D-019 in docs/decisions.md).
 CREATE OR REPLACE TABLE largest_gap AS
 SELECT service_date, gap_start_utc, gap_end_utc
 FROM (
     SELECT service_date, gap_start_utc, gap_end_utc,
-           ROW_NUMBER() OVER (PARTITION BY service_date ORDER BY gap_s DESC) AS rn
+           ROW_NUMBER() OVER (PARTITION BY service_date ORDER BY gap_s DESC, gap_start_utc ASC) AS rn
     FROM feed_gaps_clipped
 ) WHERE rn = 1;
 

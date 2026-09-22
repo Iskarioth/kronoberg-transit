@@ -62,6 +62,38 @@ COUNT_COLUMNS = [
     "on_time_300_departures",
 ]
 
+# Stop-set dimension (D-019): every tab below carries a stop_set column
+# (all_stops | timing_stops). Trip-level columns are identical across stop
+# sets by construction (the trip block never filters on is_timing_stop);
+# only measure-block columns are restricted per stop_set.
+STOP_SET_TABS = [
+    "network_monthly",
+    "route_monthly",
+    "route_daily",
+    "station_monthly",
+    "hour_monthly",
+]
+
+TRIP_LEVEL_COLUMNS = [
+    "scheduled_trips",
+    "in_scope_trips",
+    "out_of_scope_trips",
+    "cancelled_trips",
+    "trips_no_realtime_data",
+    "trips_no_realtime_data_in_outage",
+    "cancellation_share",
+    "no_realtime_data_share",
+    "in_scope_share",
+]
+
+STOP_SET_KEY_COLUMNS = {
+    "network_monthly": ["month", "day_type"],
+    "route_monthly": ["month", "day_type", "route_id"],
+    "route_daily": ["service_date", "route_id"],
+    "station_monthly": ["month", "day_type", "station_id"],
+    "hour_monthly": ["month", "day_type", "hour_local"],
+}
+
 
 def build_tables(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(render_sql("aggregate_base.sql", warehouse_dir=WAREHOUSE_DIR.as_posix()))
@@ -80,51 +112,56 @@ def _columns(con: duckdb.DuckDBPyConnection, table: str) -> set[str]:
 def run_consistency_checks(con: duckdb.DuckDBPyConnection) -> None:
     checks: list[tuple[str, bool]] = []
 
-    # For each month and day type, summing eligible/observed across
+    # For each month, day type and stop_set, summing eligible/observed across
     # route_monthly, station_monthly and hour_monthly must equal
-    # network_monthly.
+    # network_monthly for the same stop_set.
     for tab in ["route_monthly", "station_monthly", "hour_monthly"]:
         for col in ["eligible_departures", "observed_departures"]:
             n_bad = con.execute(f"""
                 SELECT COUNT(*) FROM (
-                    SELECT nm.month, nm.day_type
+                    SELECT nm.month, nm.day_type, nm.stop_set
                     FROM network_monthly nm
                     JOIN (
-                        SELECT month, day_type, SUM({col}) AS s FROM {tab} GROUP BY 1, 2
-                    ) t ON t.month = nm.month AND t.day_type = nm.day_type
+                        SELECT month, day_type, stop_set, SUM({col}) AS s FROM {tab} GROUP BY 1, 2, 3
+                    ) t ON t.month = nm.month AND t.day_type = nm.day_type AND t.stop_set = nm.stop_set
                     WHERE t.s != nm.{col}
                 )
             """).fetchone()[0]
-            checks.append((f"sum({col}) over {tab} == network_monthly", n_bad == 0))
+            checks.append(
+                (f"sum({col}) over {tab} == network_monthly, within stop_set", n_bad == 0)
+            )
 
     # Summing route_daily over a month's dates gives route_monthly with
-    # day_type='all', for every count column.
+    # day_type='all', for every count column, within the same stop_set.
     rd_cols = _columns(con, "route_daily") & set(COUNT_COLUMNS)
     for col in sorted(rd_cols):
         n_bad = con.execute(f"""
             SELECT COUNT(*) FROM (
-                SELECT rm.month, rm.route_id
+                SELECT rm.month, rm.route_id, rm.stop_set
                 FROM route_monthly rm
                 JOIN (
-                    SELECT route_id, strftime(service_date, '%Y-%m') AS month, SUM({col}) AS s
-                    FROM route_daily GROUP BY 1, 2
-                ) t ON t.route_id = rm.route_id AND t.month = rm.month
+                    SELECT route_id, stop_set, strftime(service_date, '%Y-%m') AS month, SUM({col}) AS s
+                    FROM route_daily GROUP BY 1, 2, 3
+                ) t ON t.route_id = rm.route_id AND t.month = rm.month AND t.stop_set = rm.stop_set
                 WHERE rm.day_type = 'all' AND t.s != rm.{col}
             )
         """).fetchone()[0]
         checks.append(
-            (f"sum(route_daily.{col}) over a month == route_monthly(all).{col}", n_bad == 0)
+            (
+                f"sum(route_daily.{col}) over a month == route_monthly(all).{col}, within stop_set",
+                n_bad == 0,
+            )
         )
 
     # day_type='all' equals the sum of weekday+saturday+sunday, for every
-    # count column, on every monthly tab.
+    # count column, on every monthly tab, within the same stop_set.
     for tab in MONTHLY_TABS:
         cols = _columns(con, tab) & set(COUNT_COLUMNS)
         group_cols = {
-            "network_monthly": ["month"],
-            "route_monthly": ["month", "route_id"],
-            "station_monthly": ["month", "station_id"],
-            "hour_monthly": ["month", "hour_local"],
+            "network_monthly": ["month", "stop_set"],
+            "route_monthly": ["month", "stop_set", "route_id"],
+            "station_monthly": ["month", "stop_set", "station_id"],
+            "hour_monthly": ["month", "stop_set", "hour_local"],
         }[tab]
         gc = ", ".join(group_cols)
         for col in sorted(cols):
@@ -139,7 +176,45 @@ def run_consistency_checks(con: duckdb.DuckDBPyConnection) -> None:
                     WHERE t1.day_type = 'all'
                 ) WHERE all_val != COALESCE(parts_sum, 0)
             """).fetchone()[0]
-            checks.append((f"{tab}.{col}: all == weekday+saturday+sunday", n_bad == 0))
+            checks.append(
+                (f"{tab}.{col}: all == weekday+saturday+sunday, within stop_set", n_bad == 0)
+            )
+
+    # D-019: timing_stops must never exceed all_stops for the same keys, on
+    # every measure-block count column of every stop-set-bearing tab.
+    for tab in STOP_SET_TABS:
+        key_cols = STOP_SET_KEY_COLUMNS[tab]
+        cols = _columns(con, tab) & set(COUNT_COLUMNS)
+        kc = ", ".join(key_cols)
+        for col in sorted(cols):
+            n_bad = con.execute(f"""
+                SELECT COUNT(*) FROM (
+                    SELECT a.{key_cols[0]}
+                    FROM (SELECT {kc}, {col} FROM {tab} WHERE stop_set = 'all_stops') a
+                    JOIN (SELECT {kc}, {col} FROM {tab} WHERE stop_set = 'timing_stops') t
+                        ON ({" AND ".join(f"a.{c} = t.{c}" for c in key_cols)})
+                    WHERE t.{col} > a.{col}
+                )
+            """).fetchone()[0]
+            checks.append((f"{tab}.{col}: timing_stops <= all_stops", n_bad == 0))
+
+    # D-019: trip-level columns must be identical across stop sets for the
+    # same keys, on every tab that carries them.
+    for tab in ["network_monthly", "route_monthly", "route_daily"]:
+        key_cols = STOP_SET_KEY_COLUMNS[tab]
+        cols = _columns(con, tab) & set(TRIP_LEVEL_COLUMNS)
+        kc = ", ".join(key_cols)
+        for col in sorted(cols):
+            n_bad = con.execute(f"""
+                SELECT COUNT(*) FROM (
+                    SELECT a.{key_cols[0]}
+                    FROM (SELECT {kc}, {col} FROM {tab} WHERE stop_set = 'all_stops') a
+                    JOIN (SELECT {kc}, {col} FROM {tab} WHERE stop_set = 'timing_stops') t
+                        ON ({" AND ".join(f"a.{c} = t.{c}" for c in key_cols)})
+                    WHERE a.{col} IS DISTINCT FROM t.{col}
+                )
+            """).fetchone()[0]
+            checks.append((f"{tab}.{col}: identical across stop sets", n_bad == 0))
 
     failed = [name for name, ok in checks if not ok]
     if failed:

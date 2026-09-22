@@ -28,17 +28,27 @@ from kronoberg_transit.transform import render_sql
 
 FIXTURE_WAREHOUSE = Path(__file__).resolve().parent / "fixtures" / "aggregate" / "warehouse"
 
+# route 9011007087300000 (route 873) on 2026-09-01, trimmed to its one
+# direction-0 and one direction-1 trip: both have n_trips=1 and the same
+# earliest_departure (03:55:00), an exact tie in aggregate_base.sql's
+# route_pattern selection broken only by direction_id (D-019).
+FIXTURE_WAREHOUSE_TIE = Path(__file__).resolve().parent / "fixtures" / "aggregate" / "warehouse_tie"
+
+
+def _build(con: duckdb.DuckDBPyConnection, warehouse_dir: Path) -> None:
+    con.execute(render_sql("aggregate_base.sql", warehouse_dir=warehouse_dir.as_posix()))
+    con.execute(render_sql("aggregate_network_monthly.sql"))
+    con.execute(render_sql("aggregate_route_monthly.sql"))
+    con.execute(render_sql("aggregate_route_daily.sql"))
+    con.execute(render_sql("aggregate_station_monthly.sql"))
+    con.execute(render_sql("aggregate_hour_monthly.sql"))
+    con.execute(render_sql("aggregate_data_quality.sql"))
+
 
 @pytest.fixture(scope="module")
 def con():
     c = duckdb.connect()
-    c.execute(render_sql("aggregate_base.sql", warehouse_dir=FIXTURE_WAREHOUSE.as_posix()))
-    c.execute(render_sql("aggregate_network_monthly.sql"))
-    c.execute(render_sql("aggregate_route_monthly.sql"))
-    c.execute(render_sql("aggregate_route_daily.sql"))
-    c.execute(render_sql("aggregate_station_monthly.sql"))
-    c.execute(render_sql("aggregate_hour_monthly.sql"))
-    c.execute(render_sql("aggregate_data_quality.sql"))
+    _build(c, FIXTURE_WAREHOUSE)
     yield c
     c.close()
 
@@ -217,3 +227,52 @@ def test_station_fallback_when_no_parent_station(con):
         f"SELECT station_name FROM station_names WHERE station_id = '{station_id}'"
     ).fetchone()[0]
     assert station_name == own_name
+
+
+def test_build_is_deterministic():
+    """Running the aggregate build twice from the same warehouse must give
+    byte-identical results on every published tab (D-019: aggregate_base.sql's
+    route_pattern tie-break was previously not a total order, so two runs
+    could pick a different direction for a route's label)."""
+    con_a = duckdb.connect()
+    _build(con_a, FIXTURE_WAREHOUSE)
+    first = {}
+    for table in agg.TABS:
+        cols = [d[0] for d in con_a.execute(f"SELECT * FROM {table} LIMIT 0").description]
+        rows = set(con_a.execute(f"SELECT * FROM {table}").fetchall())
+        first[table] = (cols, rows)
+    con_a.close()
+
+    con_b = duckdb.connect()
+    _build(con_b, FIXTURE_WAREHOUSE)
+    for table in agg.TABS:
+        cols = [d[0] for d in con_b.execute(f"SELECT * FROM {table} LIMIT 0").description]
+        rows = set(con_b.execute(f"SELECT * FROM {table}").fetchall())
+        expected_cols, expected_rows = first[table]
+        assert cols == expected_cols, f"{table}: column order changed between builds"
+        assert rows == expected_rows, (
+            f"{table}: rows differ between two builds of the same warehouse"
+        )
+    con_b.close()
+
+
+def test_pattern_tie_broken_deterministically():
+    """route_pattern's ORDER BY (n_trips DESC, earliest_departure ASC,
+    direction_id ASC NULLS LAST, pattern_key ASC) must pick the same pattern
+    every time for an exact n_trips/earliest_departure tie (D-019). The
+    direction-0 trip's label wins here because 0 < 1."""
+    route_id = "9011007087300000"
+    for _ in range(3):
+        con = duckdb.connect()
+        _build(con, FIXTURE_WAREHOUSE_TIE)
+        n_trips_tied = con.execute(
+            "SELECT COUNT(DISTINCT n_trips), COUNT(DISTINCT earliest_departure) "
+            f"FROM pattern_counts WHERE route_id = '{route_id}'"
+        ).fetchone()
+        assert n_trips_tied == (1, 1), "fixture no longer reproduces the tie"
+
+        label = con.execute(
+            f"SELECT route_label FROM route_labels WHERE route_id = '{route_id}'"
+        ).fetchone()[0]
+        assert label == "873 · Värnamo station – Ljungby terminal"
+        con.close()

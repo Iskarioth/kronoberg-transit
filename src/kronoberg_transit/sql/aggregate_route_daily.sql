@@ -1,7 +1,8 @@
--- route_daily (D-017): one row per (service_date, route_id). Same shape as
--- route_monthly but at daily grain, with a single day_type per row (that
--- date's actual type, not the 'all' expansion). Requires aggregate_base.sql
--- to have run first.
+-- route_daily (D-017): one row per (service_date, route_id, stop_set
+-- (D-019)). Same shape as route_monthly but at daily grain, with a single
+-- day_type per row (that date's actual type, not the 'all' expansion). Trip
+-- block T is identical across stop sets; measure block M is restricted per
+-- stop_set. Requires aggregate_base.sql to have run first.
 
 CREATE OR REPLACE TABLE route_daily_raw AS
 WITH trip_agg AS (
@@ -17,7 +18,7 @@ WITH trip_agg AS (
     GROUP BY dt.service_date, dt.day_type, t.route_id
 ),
 se_agg AS (
-    SELECT se.service_date, se.route_id,
+    SELECT se.service_date, se.stop_set, se.route_id,
         COUNT(*) FILTER (WHERE se.status IN ('observed', 'unobserved')) AS eligible_departures,
         COUNT(*) FILTER (WHERE se.status = 'observed') AS observed_departures,
         COUNT(*) FILTER (WHERE se.status = 'unobserved') AS unobserved_departures,
@@ -30,12 +31,16 @@ se_agg AS (
         COUNT(*) FILTER (WHERE se.status = 'observed' AND se.delay_s BETWEEN -60 AND 300) AS on_time_300_departures,
         quantile_cont(se.delay_s, 0.5) FILTER (WHERE se.status = 'observed') AS median_delay_s,
         quantile_cont(se.delay_s, 0.9) FILTER (WHERE se.status = 'observed') AS p90_delay_s
-    FROM all_stop_events se
-    WHERE se.stop_position != 'final' AND se.in_scope
-    GROUP BY se.service_date, se.route_id
+    FROM stop_set_stop_events se
+    GROUP BY se.service_date, se.stop_set, se.route_id
+),
+keys AS (
+    SELECT ta.service_date, ta.day_type, ta.route_id, ss.stop_set
+    FROM trip_agg ta
+    CROSS JOIN stop_sets ss
 )
 SELECT
-    ta.service_date, ta.day_type, ta.route_id, rl.route_short_name, rl.route_label,
+    k.service_date, k.day_type, k.stop_set, k.route_id, rl.route_short_name, rl.route_label,
     ta.scheduled_trips, ta.in_scope_trips, ta.out_of_scope_trips,
     ta.cancelled_trips, ta.trips_no_realtime_data, ta.trips_no_realtime_data_in_outage,
     ROUND(ta.cancelled_trips::DOUBLE / NULLIF(ta.in_scope_trips, 0), 4) AS cancellation_share,
@@ -59,9 +64,10 @@ SELECT
     ROUND(COALESCE(sa.on_time_60_departures, 0)::DOUBLE / NULLIF(sa.observed_departures, 0), 4) AS on_time_60_share,
     ROUND(COALESCE(sa.on_time_300_departures, 0)::DOUBLE / NULLIF(sa.observed_departures, 0), 4) AS on_time_300_share,
     sa.median_delay_s, sa.p90_delay_s
-FROM trip_agg ta
-JOIN route_labels rl ON rl.route_id = ta.route_id
-LEFT JOIN se_agg sa ON sa.service_date = ta.service_date AND sa.route_id = ta.route_id;
+FROM keys k
+JOIN trip_agg ta ON ta.service_date = k.service_date AND ta.route_id = k.route_id
+JOIN route_labels rl ON rl.route_id = k.route_id
+LEFT JOIN se_agg sa ON sa.service_date = k.service_date AND sa.stop_set = k.stop_set AND sa.route_id = k.route_id;
 
 CREATE OR REPLACE TABLE route_daily AS
 SELECT *,

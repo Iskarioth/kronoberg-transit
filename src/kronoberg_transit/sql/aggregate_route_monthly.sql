@@ -1,8 +1,10 @@
--- route_monthly (D-017): one row per (month, day_type, route_id). Includes
--- every route with at least one scheduled trip that month/day_type, even if
--- none of its trips are in scope (M block is then all zero/null, since there
--- are no in-scope stop_events to aggregate). Requires aggregate_base.sql and
--- aggregate_network_monthly.sql (for month_completeness) to have run first.
+-- route_monthly (D-017): one row per (month, day_type, stop_set (D-019),
+-- route_id). Includes every route with at least one scheduled trip that
+-- month/day_type, even if none of its trips are in scope (M block is then
+-- all zero/null, since there are no in-scope stop_events to aggregate). Trip
+-- block T is identical across stop sets; measure block M is restricted per
+-- stop_set. Requires aggregate_base.sql and aggregate_network_monthly.sql
+-- (for month_completeness) to have run first.
 
 CREATE OR REPLACE TABLE route_monthly_raw AS
 WITH trip_agg AS (
@@ -19,7 +21,7 @@ WITH trip_agg AS (
     GROUP BY dte.month, dte.day_type, t.route_id
 ),
 se_agg AS (
-    SELECT dte.month, dte.day_type, se.route_id,
+    SELECT dte.month, dte.day_type, se.stop_set, se.route_id,
         COUNT(*) FILTER (WHERE se.status IN ('observed', 'unobserved')) AS eligible_departures,
         COUNT(*) FILTER (WHERE se.status = 'observed') AS observed_departures,
         COUNT(*) FILTER (WHERE se.status = 'unobserved') AS unobserved_departures,
@@ -32,13 +34,17 @@ se_agg AS (
         COUNT(*) FILTER (WHERE se.status = 'observed' AND se.delay_s BETWEEN -60 AND 300) AS on_time_300_departures,
         quantile_cont(se.delay_s, 0.5) FILTER (WHERE se.status = 'observed') AS median_delay_s,
         quantile_cont(se.delay_s, 0.9) FILTER (WHERE se.status = 'observed') AS p90_delay_s
-    FROM all_stop_events se
+    FROM stop_set_stop_events se
     JOIN day_type_expanded dte ON dte.service_date = se.service_date
-    WHERE se.stop_position != 'final' AND se.in_scope
-    GROUP BY dte.month, dte.day_type, se.route_id
+    GROUP BY dte.month, dte.day_type, se.stop_set, se.route_id
+),
+keys AS (
+    SELECT ta.month, ta.day_type, ta.route_id, ss.stop_set
+    FROM trip_agg ta
+    CROSS JOIN stop_sets ss
 )
 SELECT
-    ta.month, ta.day_type, ta.route_id, rl.route_short_name, rl.route_label,
+    k.month, k.day_type, k.stop_set, k.route_id, rl.route_short_name, rl.route_label,
     ta.service_dates, mc.month_complete,
     ta.scheduled_trips, ta.in_scope_trips, ta.out_of_scope_trips,
     ta.cancelled_trips, ta.trips_no_realtime_data, ta.trips_no_realtime_data_in_outage,
@@ -63,10 +69,11 @@ SELECT
     ROUND(COALESCE(sa.on_time_60_departures, 0)::DOUBLE / NULLIF(sa.observed_departures, 0), 4) AS on_time_60_share,
     ROUND(COALESCE(sa.on_time_300_departures, 0)::DOUBLE / NULLIF(sa.observed_departures, 0), 4) AS on_time_300_share,
     sa.median_delay_s, sa.p90_delay_s
-FROM trip_agg ta
-JOIN route_labels rl ON rl.route_id = ta.route_id
-LEFT JOIN se_agg sa ON sa.month = ta.month AND sa.day_type = ta.day_type AND sa.route_id = ta.route_id
-JOIN month_completeness mc ON mc.month = ta.month;
+FROM keys k
+JOIN trip_agg ta ON ta.month = k.month AND ta.day_type = k.day_type AND ta.route_id = k.route_id
+JOIN route_labels rl ON rl.route_id = k.route_id
+LEFT JOIN se_agg sa ON sa.month = k.month AND sa.day_type = k.day_type AND sa.stop_set = k.stop_set AND sa.route_id = k.route_id
+JOIN month_completeness mc ON mc.month = k.month;
 
 CREATE OR REPLACE TABLE route_monthly AS
 SELECT *,

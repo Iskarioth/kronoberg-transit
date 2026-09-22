@@ -26,6 +26,24 @@ SELECT * FROM read_parquet('$warehouse_dir/feed_gaps/*/part-0.parquet');
 CREATE OR REPLACE TABLE service_dates AS
 SELECT DISTINCT service_date FROM all_trips;
 
+-- Stop set (D-019): all_stops | timing_stops. Every monthly/daily
+-- measure-block tab is published twice, once per stop set.
+CREATE OR REPLACE TABLE stop_sets AS
+SELECT 'all_stops' AS stop_set
+UNION ALL
+SELECT 'timing_stops';
+
+-- Non-final, in-scope stop_events, duplicated into an all_stops row (always)
+-- and a timing_stops row (only when is_timing_stop). This is the single
+-- source every tab's measure block aggregates over, so a stop_set='all_stops'
+-- row is always exactly what the tab contained before D-019.
+CREATE OR REPLACE TABLE stop_set_stop_events AS
+SELECT se.*, ss.stop_set
+FROM all_stop_events se
+CROSS JOIN stop_sets ss
+WHERE se.stop_position != 'final' AND se.in_scope
+  AND (ss.stop_set = 'all_stops' OR se.is_timing_stop);
+
 -- Day type (D-017): weekday | saturday | sunday. No weekday public holiday
 -- falls in the processed range, so the OPEN Public holidays row is not
 -- implemented here.
@@ -79,35 +97,45 @@ FROM all_routes
 GROUP BY route_id;
 
 -- Every trip's stop pattern (ordered stop_id list, as a delimited string key
--- so it groups cleanly) plus its first/last stop.
+-- so it groups cleanly) plus its first/last stop and direction_id.
 CREATE OR REPLACE TABLE trip_patterns AS
 SELECT
     t.service_date,
     t.route_id,
     t.trip_id,
+    t.direction_id,
     t.scheduled_first_departure_utc,
     array_to_string(list(se.stop_id ORDER BY se.stop_sequence), ',') AS pattern_key,
     first(se.stop_id ORDER BY se.stop_sequence) AS first_stop_id,
     last(se.stop_id ORDER BY se.stop_sequence) AS last_stop_id
 FROM all_trips t
 JOIN all_stop_events se ON se.trip_id = t.trip_id AND se.service_date = t.service_date
-GROUP BY t.service_date, t.route_id, t.trip_id, t.scheduled_first_departure_utc;
+GROUP BY t.service_date, t.route_id, t.trip_id, t.direction_id, t.scheduled_first_departure_utc;
 
 CREATE OR REPLACE TABLE pattern_counts AS
 SELECT route_id, pattern_key,
        any_value(first_stop_id) AS first_stop_id,
        any_value(last_stop_id) AS last_stop_id,
+       any_value(direction_id) AS direction_id,
        COUNT(*) AS n_trips,
        MIN(scheduled_first_departure_utc) AS earliest_departure
 FROM trip_patterns
 GROUP BY route_id, pattern_key;
 
--- The most common pattern per route; ties broken by earliest first departure.
+-- The most common pattern per route. Ties broken by: earliest first
+-- departure, then direction_id, then the pattern's full stop_id sequence
+-- (pattern_key) - which is unique within a route (it is the GROUP BY key
+-- above), so this ORDER BY is a total order and the winner is deterministic
+-- across runs (D-019: this tie-break was previously incomplete - see D-019
+-- in docs/decisions.md).
 CREATE OR REPLACE TABLE route_pattern AS
 SELECT route_id, first_stop_id, last_stop_id
 FROM (
     SELECT route_id, first_stop_id, last_stop_id,
-           ROW_NUMBER() OVER (PARTITION BY route_id ORDER BY n_trips DESC, earliest_departure ASC) AS rn
+           ROW_NUMBER() OVER (
+               PARTITION BY route_id
+               ORDER BY n_trips DESC, earliest_departure ASC, direction_id ASC NULLS LAST, pattern_key ASC
+           ) AS rn
     FROM pattern_counts
 ) WHERE rn = 1;
 

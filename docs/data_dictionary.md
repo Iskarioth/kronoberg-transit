@@ -13,10 +13,18 @@ D-017's Reporting time zone) as ISO 8601 strings. `month` is `YYYY-MM`. `day_typ
 `weekday` | `saturday` | `sunday` on `route_daily` and `data_quality`, and additionally
 `all` (the union of the other three) on every monthly tab (D-017).
 
+`stop_set` (D-019) is `all_stops` | `timing_stops` on `network_monthly`, `route_monthly`,
+`route_daily`, `station_monthly` and `hour_monthly` (`data_quality` and `run_log` are
+unaffected). Every dashboard or query against these five tabs must always filter on
+**both** `stop_set` and `day_type` - a query that only filters `day_type` double-counts
+every group across the two stop sets.
+
 Two column blocks are shared across tabs:
 
 **Measure block M** (every tab except `data_quality` and `run_log`), over in-scope,
-non-final stop events (D-008, D-013):
+non-final stop events (D-008, D-013), restricted to the row's `stop_set` (D-019):
+`all_stops` is every such stop event; `timing_stops` is the subset with
+`stop_events.is_timing_stop`.
 
 | Column | Type | Description |
 |---|---|---|
@@ -36,7 +44,8 @@ non-final stop events (D-008, D-013):
 | not_reportable_reason | string | Empty when reportable; else `observed_trips<20`, `coverage<90%`, both joined by `;`, or `no_eligible_departures` |
 
 **Trip block T** (`network_monthly`, `route_monthly`, `route_daily`), over all trips
-regardless of scope:
+regardless of scope. Trip block values never depend on `stop_events.is_timing_stop`, so
+they are identical between a row's `all_stops` and `timing_stops` versions (D-019):
 
 | Column | Type | Description |
 |---|---|---|
@@ -59,6 +68,7 @@ One row per (month, day_type). T and M as above.
 |---|---|---|
 | month | string | `YYYY-MM` |
 | day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | service_dates | integer | Distinct service dates contributing to this row |
 | month_complete | bool | True once every calendar date in the month has a warehouse partition (D-015) |
 | *(T block)* | | |
@@ -75,9 +85,10 @@ numbers that map to more than one route_id (D-017).
 |---|---|---|
 | month | string | `YYYY-MM` |
 | day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | route_id | string | GTFS route ID |
 | route_short_name | string | Short route name |
-| route_label | string | `<route_short_name> · <first station> – <last station>` of the route's most common stop pattern (ties broken by earliest scheduled first departure); `route_id` appended in parentheses to both sides of a label collision |
+| route_label | string | `<route_short_name> · <first station> – <last station>` of the route's most common stop pattern. Ties broken, in order, by: earliest scheduled first departure; then `direction_id` (ascending, nulls last); then the pattern's full ordered stop_id sequence (ascending) - unique within a route, so this order is total and the result is deterministic across runs (D-019). `route_id` appended in parentheses to both sides of a label collision |
 | service_dates | integer | Distinct service dates this route ran on, this month/day_type |
 | month_complete | bool | See `network_monthly` |
 | *(T block)* | | |
@@ -93,6 +104,7 @@ One row per (service_date, route_id). Same shape as `route_monthly` at daily gra
 |---|---|---|
 | service_date | date (ISO `YYYY-MM-DD`) | Service date the row summarizes |
 | day_type | string | `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | route_id | string | GTFS route ID |
 | route_short_name | string | Short route name |
 | route_label | string | See `route_monthly` |
@@ -102,13 +114,19 @@ One row per (service_date, route_id). Same shape as `route_monthly` at daily gra
 
 ### `station_monthly`
 
-One row per (month, day_type, station). A station is a stop's `parent_station`, or the
-stop itself if it has none (D-017). M block only.
+One row per (month, day_type, stop_set, station). A station is a stop's
+`parent_station`, or the stop itself if it has none (D-017). M block only. For
+`stop_set = timing_stops`, a station only gets a row if it has at least one
+timing-stop-eligible departure (M block `eligible_departures` > 0) that month/day_type;
+`stop_set = all_stops` keeps the unrestricted pre-D-019 behaviour (a row exists whenever
+the station has any non-final in-scope stop event, even with zero eligible departures)
+(D-019).
 
 | Column | Type | Description |
 |---|---|---|
 | month | string | `YYYY-MM` |
 | day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | station_id | string | The station's `stop_id` (its own, or its members' `parent_station`) |
 | station_name | string | The station's `stop_name` |
 | route_short_names | string | Distinct route short names serving this station, sorted, comma-separated |
@@ -124,6 +142,7 @@ each stop event's scheduled departure (D-017's Hour of day).
 |---|---|---|
 | month | string | `YYYY-MM` |
 | day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | hour_local | integer | Local hour, 0-23, of the scheduled departure |
 | month_complete | bool | See `network_monthly` |
 | *(M block)* | | |
