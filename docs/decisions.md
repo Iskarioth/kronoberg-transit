@@ -403,3 +403,70 @@ are in scope, including any trip without an attribution row.
   shown next to the figures.
 - Measuring these trips from the neighbouring authorities' feeds is a possible later
   extension, not part of this project's scope.
+
+---
+
+## D-014 · 2026-09-22 · Reporting floor: 20 observed trips and 90% coverage
+
+**Decision:** A punctuality figure is reportable only when it rests on at least 20
+observed trips and at least 90% coverage, at the level it is shown: for example a route
+in a month, a route on a day, or a station in a month. Observed trips are distinct
+in-scope trips with at least one observed departure among the stop events the figure
+covers. Figures below either floor stay in the data, flagged with the reason, and are
+not presented as results.
+
+**Reason:**
+
+- Departures on the same trip are not independent: a bus running late at one stop is
+  usually late at the next. Trips are the more honest sample size. Treating each trip as
+  one observation, an on-time share near 60% from 10 trips is uncertain by roughly
+  ±30 pp, and from 20 trips by roughly ±22 pp.
+- Within scope (D-013), coverage is rarely the binding limit. Every route-day on
+  2026-09-06 and 88 of 100 on 2026-09-07 are at 95% or above. A 90% floor still excludes
+  the real partial-data cases, such as route 775 (48%) and route 31 (route_id
+  9011007003100000, 62%) on 2026-09-07. It keeps route 106 (92%, 488 observed
+  departures), which a 95% floor would drop.
+- On 2026-09-07, 32 of 100 in-scope route-days pass, holding 85% of the day's observed
+  departures. On 2026-09-06, 10 of 29 pass, holding 74%. Daily figures work for the
+  larger routes; smaller routes need a longer period (D-015).
+- Flagging instead of dropping keeps thin routes visible, consistent with never
+  silently dropping data.
+
+**Consequences:**
+
+- Every aggregate carries its observed trips, observed departures, coverage, and a
+  reportable flag with the reason.
+- The floor applies to headline figures and their +60 s and +300 s sensitivity versions
+  alike.
+
+---
+
+## D-015 · 2026-09-22 · Analysis period: daily from 2026-09-01, published by calendar month
+
+**Decision:** The pipeline processes every service date from 2026-09-01 onward.
+Published figures are by calendar month of service date. A month is published once
+every service date in it has been processed, including the next-day archives D-011
+needs for its last day. Daily figures are kept for trends, and for the larger routes
+that pass the reporting floor on a single day (D-014).
+
+**Reason:**
+
+- Calendar months are the natural unit for the write-up and for comparisons ("in
+  September, route X…").
+- Many routes run only a few trips a day: on 2026-09-07, 53 of 100 in-scope route-days
+  had fewer than 10 observed trips. Over a month, a route with one trip each weekday
+  reaches about 20 observed trips, enough to meet the floor.
+- September 2026 is the first full calendar month the project can process, and it
+  contains both validated dates (2026-09-06 and 2026-09-07).
+
+**Consequences:**
+
+- Months differ in their mix of weekdays, Saturdays and Sundays, and in holidays and
+  school breaks, so month-to-month comparisons can shift for calendar reasons alone.
+  Monthly figures are also reported by day type. The day-type definition, including
+  public holidays, is set with the aggregation step.
+- Until a month is complete, its figures are shown as month to date and marked
+  incomplete.
+- The daylight-saving handling flagged in D-011 must be in place before the pipeline
+  processes 2026-10-25.
+- September 2026 is complete once the early archives of 2026-10-01 have been processed.

@@ -17,7 +17,7 @@ Status labels:
 | Trips in scope | Trips in the `krono` static schedule for the service date, except those whose operator in `attributions.txt` is another public transport authority listed in the feed's `agency.txt` (any agency other than Länstrafiken Kronoberg). Trips without an attribution row are in scope. Punctuality, coverage, cancelled trips, skipped stops, trips with no realtime data and unobserved stop events all apply to trips in scope only. Out-of-scope trips are counted separately per route and day (D-013) | FIXED |
 | Realtime source | KoDa historical GTFS-RT, feed `TripUpdates` | FIXED |
 | Schedule source | KoDa historical GTFS static for the **same service date** | FIXED |
-| Analysis period | To be set after the first backfill test | OPEN |
+| Analysis period | Every service date from 2026-09-01 onward, processed daily. Published figures are by calendar month of service date; a month is published once all its service dates are processed. Daily figures are kept for trends (D-015) | FIXED |
 
 ## Time
 
@@ -56,7 +56,7 @@ Status labels:
 | Unobserved stop events | Scheduled stop events that are not on a cancelled trip, not skipped (D-009), and have no realtime observation, including those whose last realtime value lacks the recorded-time marker (D-007). They are labelled `unobserved`, **never** counted as on time and never silently dropped | FIXED |
 | Stop event status | Every scheduled stop event at the measurement point gets exactly one status, checked in this order: `out_of_scope` (on an out-of-scope trip, D-013), `cancelled` (on a cancelled trip), `skipped`, `observed`, `unobserved` (D-009) | FIXED |
 | Coverage | Observed stop events ÷ scheduled stop events at the measurement point (final stops excluded, D-008), per route and day. Stop events on cancelled trips and skipped stop events are excluded from both counts, since each is reported in its own rate (D-009). Reported alongside every punctuality figure | FIXED |
-| Minimum coverage | Below which a route-day is flagged as unreliable in reporting | OPEN |
+| Reporting floor | A punctuality figure is reportable only when it rests on at least 20 observed trips (distinct in-scope trips with at least one observed departure among the stop events it covers) and coverage of at least 90%, at the level it is shown. Figures below either floor stay in the data, flagged with the reason, and are not presented as results (D-014) | FIXED |
 | Added trips | Trips in realtime with no matching scheduled trip: counted and logged, excluded from punctuality | PROVISIONAL |
 | Recorded-time marker share | Stop events at the measurement point whose held value carries `uncertainty = 0`, divided by stop events at the measurement point with a held value, per service day. Reported in data_quality. A drop signals a change in the operator's system | FIXED |
 | Marker share alert level | Below which a service day is flagged in data_quality | OPEN |
