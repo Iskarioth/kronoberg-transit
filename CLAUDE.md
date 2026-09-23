@@ -28,6 +28,10 @@ rather than blocking the date (D-021).
 Metric definitions live in `docs/definitions.md`. That file is the source of truth.
 Design decisions live in `docs/decisions.md`.
 
+The Hugging Face dataset card's source is `docs/dataset_card.md`. Edit it there, then
+upload it as `README.md` with `HfApi.upload_file` (commit message "docs: update the
+dataset card"). Never edit the card on Hugging Face.
+
 ## Non-negotiable rules
 
 ### 1. No AI attribution in commits or pull requests

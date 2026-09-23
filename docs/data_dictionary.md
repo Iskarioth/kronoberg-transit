@@ -216,8 +216,10 @@ layout below, under a `data/` prefix:
 `data/<table>/service_date=YYYY-MM-DD/part-0.parquet`. Commit message:
 `data: add service date YYYY-MM-DD`. Re-uploading a date replaces its commit content at
 that path; it never duplicates rows. The dataset card (`README.md`) is never modified
-or overwritten by the pipeline. `kronoberg_transit.aggregate` reads a local mirror of
-the dataset's `data/` folder, downloaded fresh each pipeline run.
+or overwritten by the pipeline. Its source is `docs/dataset_card.md`, uploaded by hand.
+The card's `configs:` block defines one config per table, with `stop_events` as the
+default. `kronoberg_transit.aggregate` reads a local mirror of the dataset's `data/`
+folder, downloaded fresh each pipeline run.
 
 ## Parquet schema (Hugging Face warehouse)
 
