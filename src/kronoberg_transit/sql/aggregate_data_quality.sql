@@ -88,6 +88,14 @@ FROM all_stop_events
 WHERE stop_position != 'final' AND in_scope
 GROUP BY service_date;
 
+-- D-021: dst_ambiguous departures per date.
+CREATE OR REPLACE TABLE dst_ambiguous_agg AS
+SELECT service_date,
+       COUNT(*) FILTER (WHERE status = 'dst_ambiguous') AS dst_ambiguous_departures
+FROM all_stop_events
+WHERE stop_position != 'final'
+GROUP BY service_date;
+
 CREATE OR REPLACE TABLE data_quality AS
 SELECT
     dt.service_date, dt.day_type,
@@ -103,7 +111,10 @@ SELECT
     ROUND(ma.with_marker::DOUBLE / NULLIF(ma.with_held_value, 0), 4) AS marker_share,
     fq.out_of_scope_trips_in_feed,
     ta.in_scope_trips, ta.trips_no_realtime_data, ta.trips_no_realtime_data_in_outage, ta.cancelled_trips,
-    ROUND(ca.observed_departures::DOUBLE / NULLIF(ca.eligible_departures, 0), 4) AS coverage_share
+    ROUND(ca.observed_departures::DOUBLE / NULLIF(ca.eligible_departures, 0), 4) AS coverage_share,
+    COALESCE(da.dst_ambiguous_departures, 0) AS dst_ambiguous_departures,
+    fq.schedule_mismatch_stop_events,
+    fq.unmatched_realtime_trips
 FROM day_types dt
 JOIN all_feed_quality fq ON fq.service_date = dt.service_date
 JOIN gap_agg ga ON ga.service_date = dt.service_date
@@ -111,4 +122,5 @@ JOIN largest_gap lg ON lg.service_date = dt.service_date
 LEFT JOIN outage_minutes_06_22_agg om ON om.service_date = dt.service_date
 JOIN marker_agg ma ON ma.service_date = dt.service_date
 JOIN trip_agg_dq ta ON ta.service_date = dt.service_date
-JOIN coverage_agg ca ON ca.service_date = dt.service_date;
+JOIN coverage_agg ca ON ca.service_date = dt.service_date
+LEFT JOIN dst_ambiguous_agg da ON da.service_date = dt.service_date;

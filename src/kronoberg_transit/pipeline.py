@@ -8,10 +8,10 @@ dataset in one commit, deletes intermediate files, and appends a run_log
 row. Stops on the first failure. Then downloads the full dataset and
 rebuilds the Google Sheet from it (skippable with --skip-sheet).
 
-A service date that is daylight-saving-adjacent (D-020/D-021: Europe/
-Stockholm changes its UTC offset on the date itself or the day after) is
-never fetched; a run_log row records why, the run stops picking up further
-dates, and the Sheet is still rebuilt from the warehouse as it stands.
+Stop events in the daylight-saving window are marked dst_ambiguous in the
+warehouse rather than blocking the date (D-021; the D-020 date guard is
+removed). A date with a non-zero schedule_mismatch_stop_events count is
+still processed and uploaded, logged with run_log status='warning'.
 
 Usage:
     uv run --env-file .env python -m kronoberg_transit.pipeline
@@ -31,7 +31,7 @@ import duckdb
 from huggingface_hub import CommitOperationAdd, HfApi, snapshot_download
 
 from kronoberg_transit import aggregate, transform
-from kronoberg_transit.time_utils import STOCKHOLM, is_dst_adjacent
+from kronoberg_transit.time_utils import STOCKHOLM
 
 ANALYSIS_FLOOR = dt.date(2026, 9, 1)
 DEFAULT_MAX_DATES = 7
@@ -261,20 +261,11 @@ def process_date(
     keep_interim: bool,
     run_log: RunLog,
 ) -> str:
-    """Returns 'ok', 'dst_blocked' or 'failed'."""
+    """Returns 'ok' or 'failed'. The daylight-saving date guard (D-020) is
+    removed by D-021: stop events in the window are marked dst_ambiguous in
+    the warehouse instead, and a date with schedule mismatches is still
+    processed and uploaded, just logged with status='warning'."""
     svc_date_str = svc_date.isoformat()
-
-    if is_dst_adjacent(svc_date):
-        message = (
-            f"{svc_date_str} is daylight-saving-adjacent (Europe/Stockholm changes UTC "
-            f"offset on this date or the next); scheduled-time handling near a change "
-            f"is not yet verified (D-020, D-021 pending)"
-        )
-        run_log.add(
-            "transform", "error", service_date=svc_date_str, duration_s=0.0, message=message
-        )
-        print(f"STOP: {message}")
-        return "dst_blocked"
 
     print(f"Processing {svc_date_str}...")
     t0 = time.monotonic()
@@ -317,14 +308,22 @@ def process_date(
 
     counts = partition_row_counts(svc_date_str, warehouse_dir)
     duration = time.monotonic() - t0
+    schedule_mismatches = result["feed_quality"]["schedule_mismatch_stop_events"]
+    unmatched_trips = result["feed_quality"]["unmatched_realtime_trips"]
+    status = "warning" if (schedule_mismatches > 0 or unmatched_trips > 0) else "ok"
+    message = f"uploaded to {repo_id}: {counts}"
+    if schedule_mismatches > 0:
+        message += f"; schedule_mismatch_stop_events={schedule_mismatches} (D-021)"
+    if unmatched_trips > 0:
+        message += f"; unmatched_realtime_trips={unmatched_trips} (D-021)"
     run_log.add(
         "transform",
-        "ok",
+        status,
         service_date=svc_date_str,
         rows_in=result["n_scheduled_trips"],
         rows_out=sum(counts.values()),
         duration_s=duration,
-        message=f"uploaded to {repo_id}: {counts}",
+        message=message,
     )
     return "ok"
 
@@ -415,16 +414,12 @@ def main() -> int:
 
     run_log = RunLog()
     any_failed = False
-    dst_blocked = False
     for svc_date in dates:
         status = process_date(
             svc_date, repo_id, hf_token, warehouse_dir, args.keep_interim, run_log
         )
         if status == "failed":
             any_failed = True
-            break
-        if status == "dst_blocked":
-            dst_blocked = True
             break
 
     if not args.skip_sheet:
@@ -438,7 +433,7 @@ def main() -> int:
     else:
         print("skip-sheet: not touching the Sheet")
 
-    return 1 if (any_failed or dst_blocked) else 0
+    return 1 if any_failed else 0
 
 
 if __name__ == "__main__":

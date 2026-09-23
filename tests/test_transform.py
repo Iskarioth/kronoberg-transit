@@ -8,7 +8,7 @@ whose stops left the feed and came back, a scheduled trip with no
 realtime data, and a trip found in the wrong day's archives.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -80,7 +80,19 @@ def build_pipeline(svc_date: str, static_dir: Path, own_parquet: Path, next_day_
         "BIGINT",
     )
     con.execute(render_sql("trips.sql", svc_date=svc_date))
-    con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+
+    from kronoberg_transit.time_utils import is_offset_change_date
+
+    con.execute(
+        render_sql(
+            "stop_events.sql",
+            svc_date=svc_date,
+            s_is_change_date=str(is_offset_change_date(svc_date_obj)).lower(),
+            s_plus_1_is_change_date=str(
+                is_offset_change_date(svc_date_obj + timedelta(days=1))
+            ).lower(),
+        )
+    )
     return con
 
 
@@ -274,6 +286,22 @@ def test_feed_quality_never_lists_a_nonexistent_local_hour(tmp_path):
     con = duckdb.connect()
     con.execute("SET TimeZone='UTC'")
     con.execute("CREATE TABLE trips (trip_status VARCHAR, first_seen_utc TIMESTAMP)")
+    con.execute("""
+        CREATE TABLE stop_events (
+            trip_id VARCHAR, stop_sequence INTEGER, status VARCHAR,
+            scheduled_arrival_utc TIMESTAMP, scheduled_departure_utc TIMESTAMP
+        )
+    """)
+    con.execute("""
+        CREATE TABLE realtime_trip_rows (
+            trip_id VARCHAR, stop_sequence INTEGER,
+            arrival_time_present BOOLEAN, arrival_time BIGINT,
+            arrival_delay_present BOOLEAN, arrival_delay INTEGER,
+            departure_time_present BOOLEAN, departure_time BIGINT,
+            departure_delay_present BOOLEAN, departure_delay INTEGER
+        )
+    """)
+    con.execute("CREATE TABLE scheduled_trips (trip_id VARCHAR)")
 
     from kronoberg_transit.time_utils import local_hour_labels
 

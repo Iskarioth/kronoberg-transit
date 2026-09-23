@@ -59,6 +59,7 @@ they are identical between a row's `all_stops` and `timing_stops` versions (D-01
 | no_realtime_data_share | float, nullable | trips_no_realtime_data ÷ in_scope_trips |
 | skipped_departures | integer | Non-final in-scope stop events with status `skipped` (D-009) |
 | skipped_share | float, nullable | skipped_departures ÷ (eligible_departures + skipped_departures) |
+| dst_ambiguous_departures | integer | Non-final in-scope stop events with status `dst_ambiguous` (D-021) |
 
 ### `network_monthly`
 
@@ -177,16 +178,22 @@ D+1 window is the right one for judging D's trips.
 | trips_no_realtime_data_in_outage | integer | Of those, `no_data_in_outage` (D-016) |
 | cancelled_trips | integer | `trip_status = cancelled` that day |
 | coverage_share | float, nullable | Network-wide coverage that day |
+| dst_ambiguous_departures | integer | `feed_quality.dst_ambiguous_departures` (D-021) |
+| schedule_mismatch_stop_events | integer | `feed_quality.schedule_mismatch_stop_events`. Expected to be zero (D-021) |
+| unmatched_realtime_trips | integer | `feed_quality.unmatched_realtime_trips`. Expected to be zero (D-021) |
 
 ### `run_log`
 
 `run_type = aggregate` for a publishing-layer run; `run_type = pipeline` for a daily
 pipeline run (D-020). A pipeline run appends one row per service date it attempts
-(`stage = transform`) and, if it rebuilds the Sheet, one `stage = aggregate` row (from
-the same code path as a standalone `aggregate` run, so that row's own `run_type` is
-`aggregate`, not `pipeline`). A date blocked by the daylight-saving guard (D-020,
-D-021) gets a `stage = transform`, `status = error` row naming the date and the reason,
-instead of being silently skipped.
+(`stage = transform`), and, if it rebuilds the Sheet, one `stage = aggregate` row with
+`run_type = pipeline` (a single row for that rebuild - not the separate
+`run_type = aggregate` row a standalone `aggregate` run would append). The D-020 date
+guard (refusing a daylight-saving-adjacent date) is removed by D-021: such a date is
+processed normally, with the window's stop events marked `dst_ambiguous` in the
+warehouse instead. A date whose `schedule_mismatch_stop_events` or
+`unmatched_realtime_trips` count is non-zero is still processed and uploaded, with its
+`stage = transform` row's `status = warning` and the count(s) in `message` (D-021).
 
 | Column | Type | Description |
 |---|---|---|
@@ -194,7 +201,7 @@ instead of being silently skipped.
 | run_type | string | e.g. `setup`, `smoke-ci`, `aggregate`, `pipeline` |
 | service_date | date (ISO `YYYY-MM-DD`) | Service date the run processed, if applicable |
 | stage | string | Pipeline stage name |
-| status | string | `ok`, `error`, etc. |
+| status | string | `ok`, `warning`, `error`, etc. |
 | rows_in | integer | Row count into the stage |
 | rows_out | integer | Row count out of the stage |
 | duration_s | float | Stage duration in seconds |
@@ -268,7 +275,7 @@ stop_sequence)` - never `stop_id` alone, which can repeat on a looping trip.
 | last_seen_utc | timestamp, nullable | Header timestamp of that last snapshot. Null if never observed |
 | in_scope | bool | Copied from this row's trip (`trips.in_scope`, D-013) |
 | is_timing_stop | bool | True when this stop's `stop_times.timepoint` in the same-date static schedule is `1` or empty (GTFS treats empty as an exact time); false when it is `0` (D-019) |
-| status | string, nullable | `out_of_scope` \| `cancelled` \| `skipped` \| `observed` \| `unobserved`, checked in that order (D-013, D-009). Null for `stop_position = final` (D-008) |
+| status | string, nullable | `out_of_scope` \| `cancelled` \| `skipped` \| `dst_ambiguous` \| `observed` \| `unobserved`, checked in that order (D-013, D-009, D-021). Null for `stop_position = final` (D-008) |
 | delay_s | int, nullable | `held_departure_utc - scheduled_departure_utc` in seconds. Set only when `status = observed`; null otherwise, including for final stops |
 
 ### `routes`
@@ -317,6 +324,10 @@ only (not the extra D+1 hours read per D-011).
 | gaps_over_300s | int | Count of gaps over 300 seconds |
 | local_hours_without_snapshots | string | Comma-separated local hours (00-23) with no snapshots that day |
 | next_day_hours_read | string | Comma-separated D+1 local hours read for this run, per D-011 |
+| dst_ambiguous_departures | int | Count of `stop_events.status = 'dst_ambiguous'` this service date (D-021) |
+| schedule_mismatch_stop_events | int | Distinct (trip_id, stop_sequence) on realtime trips that match a scheduled trip on D (start_date = D, D-011), outside the daylight-saving window, where the feed's scheduled time (time minus delay) differs from the pipeline's scheduled time on at least one stop time update (arrival and departure checked separately). Counts matched trips only, by definition - a trip that matches no scheduled trip on D is counted in `unmatched_realtime_trips` instead, never here. Expected to be zero (D-021) |
+| schedule_mismatch_updates | int | The stop time update count behind `schedule_mismatch_stop_events` - every update, not just distinct stop events (D-021) |
+| unmatched_realtime_trips | int | Distinct realtime trips with `start_date` = D (D-011) that match no scheduled trip active on D per calendar/calendar_dates. The feed cannot tell a genuinely added trip from one tagged with the wrong service date. Expected to be zero (D-021) |
 
 ### `feed_gaps`
 

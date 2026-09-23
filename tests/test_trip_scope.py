@@ -6,7 +6,7 @@ service_id, calendar rows) and, for the full-pipeline case, the real
 realtime parquet fixtures already used by test_transform.py.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -115,7 +115,19 @@ def build_pipeline(svc_date: str, static_dir: Path, own_parquet: Path, next_day_
         "BIGINT",
     )
     con.execute(render_sql("trips.sql", svc_date=svc_date))
-    con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+
+    from kronoberg_transit.time_utils import is_offset_change_date
+
+    con.execute(
+        render_sql(
+            "stop_events.sql",
+            svc_date=svc_date,
+            s_is_change_date=str(is_offset_change_date(svc_date_obj)).lower(),
+            s_plus_1_is_change_date=str(
+                is_offset_change_date(svc_date_obj + timedelta(days=1))
+            ).lower(),
+        )
+    )
     return con
 
 

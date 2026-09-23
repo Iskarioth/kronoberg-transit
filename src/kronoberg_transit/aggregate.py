@@ -64,6 +64,7 @@ COUNT_COLUMNS = [
     "trips_no_realtime_data",
     "trips_no_realtime_data_in_outage",
     "skipped_departures",
+    "dst_ambiguous_departures",
     "eligible_departures",
     "observed_departures",
     "unobserved_departures",

@@ -67,7 +67,15 @@ def build_pipeline(static_dirname: str) -> duckdb.DuckDBPyConnection:
         "BIGINT",
     )
     con.execute(render_sql("trips.sql", svc_date=svc_date))
-    con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+    # 2026-09-07 is an ordinary date, not a daylight-saving change.
+    con.execute(
+        render_sql(
+            "stop_events.sql",
+            svc_date=svc_date,
+            s_is_change_date="false",
+            s_plus_1_is_change_date="false",
+        )
+    )
     return con
 
 

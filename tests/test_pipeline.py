@@ -181,37 +181,102 @@ def test_upload_partitions_missing_file_raises(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# Per-date processing: DST guard and stopping on first failure
+# Per-date processing: no DST guard (D-021 removes it), warning status on
+# schedule mismatches, and stopping on first failure
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("svc_date", "expect_blocked"),
-    [
-        (date(2026, 10, 23), False),
-        (date(2026, 10, 24), True),
-        (date(2026, 10, 25), True),
-    ],
-)
-def test_process_date_dst_guard(svc_date, expect_blocked, tmp_path):
+@pytest.mark.parametrize("svc_date", [date(2026, 10, 23), date(2026, 10, 24), date(2026, 10, 25)])
+def test_process_date_no_longer_blocks_on_dst_adjacent_dates(svc_date, tmp_path):
+    """D-021 removes the D-020 date guard: a daylight-saving-adjacent date is
+    processed like any other (the window is handled inside the warehouse via
+    the dst_ambiguous status, not by refusing the date)."""
     run_log = RunLog()
-    with patch("kronoberg_transit.pipeline.transform.run_transform") as mock_transform:
-        mock_transform.return_value = {
-            "n_scheduled_trips": 0,
-            "feed_quality": {"out_of_scope_trips_in_feed": 0},
-        }
+    with (
+        patch(
+            "kronoberg_transit.pipeline.transform.run_transform",
+            return_value={
+                "n_scheduled_trips": 0,
+                "feed_quality": {
+                    "out_of_scope_trips_in_feed": 0,
+                    "schedule_mismatch_stop_events": 0,
+                    "unmatched_realtime_trips": 0,
+                },
+            },
+        ) as mock_transform,
+        patch("kronoberg_transit.pipeline.upload_partitions"),
+        patch("kronoberg_transit.pipeline.delete_interim"),
+        patch("kronoberg_transit.pipeline.partition_row_counts", return_value={}),
+    ):
         status = process_date(
             svc_date, "owner/repo", "tok", tmp_path, keep_interim=True, run_log=run_log
         )
 
-    if expect_blocked:
-        assert status == "dst_blocked"
-        mock_transform.assert_not_called()
-        assert run_log.rows[-1]["status"] == "error"
-        assert svc_date.isoformat() in run_log.rows[-1]["message"]
-    else:
-        # Not DST-blocked: the pipeline proceeds to call transform.run_transform.
-        mock_transform.assert_called_once()
+    mock_transform.assert_called_once()
+    assert status == "ok"
+    assert run_log.rows[-1]["status"] == "ok"
+
+
+def test_process_date_warning_status_on_schedule_mismatch(tmp_path):
+    """A date with schedule_mismatch_stop_events > 0 is still uploaded, but
+    its run_log row gets status='warning' with the count in the message."""
+    run_log = RunLog()
+    with (
+        patch(
+            "kronoberg_transit.pipeline.transform.run_transform",
+            return_value={
+                "n_scheduled_trips": 100,
+                "feed_quality": {
+                    "out_of_scope_trips_in_feed": 0,
+                    "schedule_mismatch_stop_events": 5,
+                    "unmatched_realtime_trips": 0,
+                },
+            },
+        ),
+        patch("kronoberg_transit.pipeline.upload_partitions") as mock_upload,
+        patch("kronoberg_transit.pipeline.delete_interim"),
+        patch("kronoberg_transit.pipeline.partition_row_counts", return_value={"trips": 100}),
+    ):
+        status = process_date(
+            date(2025, 10, 25), "owner/repo", "tok", tmp_path, keep_interim=False, run_log=run_log
+        )
+
+    assert status == "ok"
+    mock_upload.assert_called_once()  # still uploaded, despite the mismatches
+    assert run_log.rows[-1]["status"] == "warning"
+    assert "schedule_mismatch_stop_events=5" in run_log.rows[-1]["message"]
+
+
+def test_process_date_warning_status_on_unmatched_realtime_trips(tmp_path):
+    """A date with unmatched_realtime_trips > 0 is still uploaded, but its
+    run_log row gets status='warning' with the count in the message (D-021:
+    the mislabelled-trip case that schedule_mismatch_stop_events cannot
+    catch, since an unmatched trip has no scheduled time to compare)."""
+    run_log = RunLog()
+    with (
+        patch(
+            "kronoberg_transit.pipeline.transform.run_transform",
+            return_value={
+                "n_scheduled_trips": 100,
+                "feed_quality": {
+                    "out_of_scope_trips_in_feed": 0,
+                    "schedule_mismatch_stop_events": 0,
+                    "unmatched_realtime_trips": 50,
+                },
+            },
+        ),
+        patch("kronoberg_transit.pipeline.upload_partitions") as mock_upload,
+        patch("kronoberg_transit.pipeline.delete_interim"),
+        patch("kronoberg_transit.pipeline.partition_row_counts", return_value={"trips": 100}),
+    ):
+        status = process_date(
+            date(2025, 10, 25), "owner/repo", "tok", tmp_path, keep_interim=False, run_log=run_log
+        )
+
+    assert status == "ok"
+    mock_upload.assert_called_once()
+    assert run_log.rows[-1]["status"] == "warning"
+    assert "unmatched_realtime_trips=50" in run_log.rows[-1]["message"]
 
 
 def test_stops_on_first_failed_date(tmp_path):
@@ -223,7 +288,11 @@ def test_stops_on_first_failed_date(tmp_path):
             raise AssertionError("Hard checks failed: [...]")
         return {
             "n_scheduled_trips": 100,
-            "feed_quality": {"out_of_scope_trips_in_feed": 0},
+            "feed_quality": {
+                "out_of_scope_trips_in_feed": 0,
+                "schedule_mismatch_stop_events": 0,
+                "unmatched_realtime_trips": 0,
+            },
         }
 
     processed = []

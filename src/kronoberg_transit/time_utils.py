@@ -56,15 +56,11 @@ def _midnight_utcoffset(d: date) -> timedelta:
     return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=STOCKHOLM).utcoffset()
 
 
-def is_dst_adjacent(svc_date: date) -> bool:
-    """True when Europe/Stockholm's UTC offset changes on svc_date itself or
-    on svc_date + 1 day (D-020/D-021): the pipeline treats such a service
-    date as daylight-saving-adjacent, since scheduled-time conversions near
-    a change are not yet verified (D-011, D-020)."""
-    d0, d1, d2 = svc_date, svc_date + timedelta(days=1), svc_date + timedelta(days=2)
-    return _midnight_utcoffset(d0) != _midnight_utcoffset(d1) or _midnight_utcoffset(
-        d1
-    ) != _midnight_utcoffset(d2)
+def is_offset_change_date(d: date) -> bool:
+    """True when Europe/Stockholm's UTC offset changes during this specific
+    calendar date (a 23h spring-forward or 25h fall-back day). Used to mark
+    stop events in the daylight-saving window (D-021)."""
+    return _midnight_utcoffset(d) != _midnight_utcoffset(d + timedelta(days=1))
 
 
 def scheduled_time_utc(svc_date: date, hms: str) -> int | None:

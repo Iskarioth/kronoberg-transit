@@ -1,0 +1,2 @@
+route_id,service_id,trip_id,trip_headsign,trip_short_name,direction_id,shape_id,samtrafiken_internal_trip_number
+9011007000300000,12,76110000039214042,,,1,1076110000008808160,767

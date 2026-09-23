@@ -26,7 +26,7 @@ import duckdb
 from kronoberg_transit.fetch_koda import fetch_day
 from kronoberg_transit.gtfs_rt import stage_date
 from kronoberg_transit.static_schedule import load_static_gtfs
-from kronoberg_transit.time_utils import STOCKHOLM, local_hour_labels
+from kronoberg_transit.time_utils import STOCKHOLM, is_offset_change_date, local_hour_labels
 from kronoberg_transit.time_utils import scheduled_time_utc as scheduled_time_utc_py
 
 OPERATOR = "krono"
@@ -181,7 +181,11 @@ def check_single_operator_per_trip(con: duckdb.DuckDBPyConnection) -> None:
         raise AssertionError(f"Trips with more than one is_operator=1 attribution row: {trip_ids}")
 
 
-def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
+def run_hard_checks(
+    con: duckdb.DuckDBPyConnection,
+    s_is_change_date: bool = False,
+    s_plus_1_is_change_date: bool = False,
+) -> None:
     checks: list[tuple[str, bool]] = []
 
     n_stop_events = con.execute("SELECT COUNT(*) FROM stop_events").fetchone()[0]
@@ -272,6 +276,31 @@ def run_hard_checks(con: duckdb.DuckDBPyConnection) -> None:
         "SELECT COUNT(*) FROM stop_events WHERE is_timing_stop IS NULL"
     ).fetchone()[0]
     checks.append(("stop_events.is_timing_stop is non-null on every row", n_null_timing_stop == 0))
+
+    s_flag = "true" if s_is_change_date else "false"
+    s_plus_1_flag = "true" if s_plus_1_is_change_date else "false"
+    n_bad_dst_ambiguous = con.execute(f"""
+        SELECT COUNT(*) FROM stop_events se
+        JOIN scheduled_stop_times st
+          ON st.trip_id = se.trip_id AND CAST(st.stop_sequence AS INTEGER) = se.stop_sequence
+        WHERE se.status = 'dst_ambiguous'
+        AND NOT (
+            CASE
+                WHEN st.departure_time IS NULL OR st.departure_time = '' THEN false
+                WHEN CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) >= 24
+                    THEN {s_plus_1_flag}
+                         AND (CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) % 24) IN (2, 3)
+                ELSE {s_flag}
+                     AND (CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) % 24) IN (2, 3)
+            END
+        )
+    """).fetchone()[0]
+    checks.append(
+        (
+            "dst_ambiguous appears only where the nominal date/hour rule says it should",
+            n_bad_dst_ambiguous == 0,
+        )
+    )
 
     failed = [name for name, ok in checks if not ok]
     if failed:
@@ -423,8 +452,18 @@ def run_transform(svc_date: str, warehouse_dir: Path = WAREHOUSE_DIR) -> dict:
             s.rows_in = n_scheduled
             s.rows_out = con.execute("SELECT COUNT(*) FROM trips").fetchone()[0]
 
+        s_is_change_date = is_offset_change_date(svc_date_obj)
+        s_plus_1_is_change_date = is_offset_change_date(svc_date_obj + timedelta(days=1))
+
         with log.timed_stage("build_stop_events") as s:
-            con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+            con.execute(
+                render_sql(
+                    "stop_events.sql",
+                    svc_date=svc_date,
+                    s_is_change_date=str(s_is_change_date).lower(),
+                    s_plus_1_is_change_date=str(s_plus_1_is_change_date).lower(),
+                )
+            )
             s.rows_in = con.execute("SELECT COUNT(*) FROM scheduled_stop_times").fetchone()[0]
             s.rows_out = con.execute("SELECT COUNT(*) FROM stop_events").fetchone()[0]
 
@@ -436,7 +475,7 @@ def run_transform(svc_date: str, warehouse_dir: Path = WAREHOUSE_DIR) -> dict:
             )
 
         with log.timed_stage("run_hard_checks"):
-            run_hard_checks(con)
+            run_hard_checks(con, s_is_change_date, s_plus_1_is_change_date)
 
         feed_quality_row = build_feed_quality(
             con, svc_date, own_interim, own_hours, next_day_hours, log
@@ -511,6 +550,25 @@ def build_feed_quality(
             f"gaps_over_300s={gaps_over_300} out_of_scope_trips_in_feed={n_out_of_scope_in_feed}"
         )
 
+    with log.timed_stage("feed_quality_dst") as s:
+        con.execute(render_sql("feed_quality_dst.sql"))
+        n_dst_ambiguous = con.execute(
+            "SELECT COUNT(*) FROM stop_events WHERE status = 'dst_ambiguous'"
+        ).fetchone()[0]
+        schedule_mismatch_updates, schedule_mismatch_stop_events = con.execute(
+            "SELECT schedule_mismatch_updates, schedule_mismatch_stop_events FROM schedule_mismatch_summary"
+        ).fetchone()
+        unmatched_realtime_trips = con.execute(
+            "SELECT unmatched_realtime_trips FROM unmatched_realtime_trips_summary"
+        ).fetchone()[0]
+        s.rows_out = n_dst_ambiguous
+        s.message = (
+            f"dst_ambiguous_departures={n_dst_ambiguous} "
+            f"schedule_mismatch_stop_events={schedule_mismatch_stop_events} "
+            f"schedule_mismatch_updates={schedule_mismatch_updates} "
+            f"unmatched_realtime_trips={unmatched_realtime_trips}"
+        )
+
     return {
         "service_date": svc_date,
         "feed": FEED,
@@ -528,6 +586,10 @@ def build_feed_quality(
         "gaps_over_300s": gaps_over_300,
         "local_hours_without_snapshots": ",".join(f"{h:02d}" for h in hours_without),
         "next_day_hours_read": ",".join(f"{h:02d}" for h in next_day_hours),
+        "dst_ambiguous_departures": n_dst_ambiguous,
+        "schedule_mismatch_stop_events": schedule_mismatch_stop_events,
+        "schedule_mismatch_updates": schedule_mismatch_updates,
+        "unmatched_realtime_trips": unmatched_realtime_trips,
     }
 
 

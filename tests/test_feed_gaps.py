@@ -17,7 +17,7 @@ entirely inside the burst of snapshots, i.e. outside every gap, while still
 having no realtime data of its own.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -79,7 +79,19 @@ def build_pipeline() -> duckdb.DuckDBPyConnection:
         "BIGINT",
     )
     con.execute(render_sql("trips.sql", svc_date=svc_date))
-    con.execute(render_sql("stop_events.sql", svc_date=svc_date))
+
+    from kronoberg_transit.time_utils import is_offset_change_date
+
+    con.execute(
+        render_sql(
+            "stop_events.sql",
+            svc_date=svc_date,
+            s_is_change_date=str(is_offset_change_date(svc_date_obj)).lower(),
+            s_plus_1_is_change_date=str(
+                is_offset_change_date(svc_date_obj + timedelta(days=1))
+            ).lower(),
+        )
+    )
     return con
 
 

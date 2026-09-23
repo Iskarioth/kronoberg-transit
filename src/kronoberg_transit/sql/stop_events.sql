@@ -1,15 +1,25 @@
 -- One row per stop_times row of a trip active on D. Status is checked in
--- order out_of_scope (D-013) -> cancelled -> skipped -> observed ->
--- unobserved (D-009) and applies to non-final stops only; final stops carry
--- their held values and marker but no status (D-008). delay_s is set only
--- when status = observed. in_scope is copied straight from the trip.
--- is_timing_stop (D-019) is true when stop_times.timepoint is 1 or empty
--- (GTFS treats empty as an exact time), false when it is 0; any other value
--- leaves it null, which the "is_timing_stop is non-null" hard check catches.
+-- order out_of_scope (D-013) -> cancelled -> skipped -> dst_ambiguous (D-021)
+-- -> observed -> unobserved (D-009) and applies to non-final stops only;
+-- final stops carry their held values and marker but no status (D-008).
+-- delay_s is set only when status = observed. in_scope is copied straight
+-- from the trip. is_timing_stop (D-019) is true when stop_times.timepoint is
+-- 1 or empty (GTFS treats empty as an exact time), false when it is 0; any
+-- other value leaves it null, which the "is_timing_stop is non-null" hard
+-- check catches.
+--
+-- dst_ambiguous (D-021): a stop event's nominal calendar date is D plus the
+-- whole days in its departure_time's HH (HH div 24), and its nominal clock
+-- hour is HH mod 24. It is dst_ambiguous when the nominal date is a day
+-- Europe/Stockholm changes its UTC offset and the nominal hour is 2 or 3.
+-- $s_is_change_date and $s_plus_1_is_change_date are booleans computed in
+-- Python (time_utils.is_offset_change_date) for D and D+1 - departure_time
+-- never reaches a second extra day, so those two dates cover every case.
 --
 -- Requires the `scheduled_time_utc(hms)` scalar UDF to be registered first,
 -- and the `trips` table to already exist.
--- Params: $svc_date (ISO date, e.g. 2026-09-07)
+-- Params: $svc_date (ISO date, e.g. 2026-09-07), $s_is_change_date,
+-- $s_plus_1_is_change_date (SQL boolean literals: true/false)
 
 CREATE OR REPLACE TABLE stop_events AS
 WITH base AS (
@@ -45,7 +55,15 @@ WITH base AS (
             WHEN st.timepoint = '1' THEN true
             WHEN st.timepoint IS NULL OR st.timepoint = '' THEN true
             WHEN st.timepoint = '0' THEN false
-        END AS is_timing_stop
+        END AS is_timing_stop,
+        CASE
+            WHEN st.departure_time IS NULL OR st.departure_time = '' THEN false
+            WHEN CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) >= 24
+                THEN $s_plus_1_is_change_date
+                     AND (CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) % 24) IN (2, 3)
+            ELSE $s_is_change_date
+                 AND (CAST(SPLIT_PART(st.departure_time, ':', 1) AS INTEGER) % 24) IN (2, 3)
+        END AS is_dst_ambiguous
     FROM scheduled_stop_times st
     JOIN scheduled_trips sched ON sched.trip_id = st.trip_id
     JOIN trip_stop_bounds b ON b.trip_id = st.trip_id
@@ -59,6 +77,7 @@ with_status AS (
             WHEN NOT in_scope THEN 'out_of_scope'
             WHEN trip_status = 'cancelled' THEN 'cancelled'
             WHEN last_stop_relationship = 'SKIPPED' THEN 'skipped'
+            WHEN is_dst_ambiguous THEN 'dst_ambiguous'
             WHEN departure_marker THEN 'observed'
             ELSE 'unobserved'
         END AS status
