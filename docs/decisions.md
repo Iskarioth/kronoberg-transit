@@ -689,6 +689,11 @@ the local hours that exist on each service date.
   daylight-saving question is settled in a later decision. That date becomes
   processable on 2026-10-26.
 
+Amended 2026-09-23: the schedule moved from 06:00 to 05:23 UTC. GitHub delays and
+sometimes drops scheduled runs at the start of the hour, and the first scheduled run
+(2026-09-23 06:00 UTC) never fired. Date selection is unchanged: it uses Stockholm time
+in pipeline.py.
+
 ---
 
 ## D-021 · 2026-09-22 · Stop events in the daylight-saving window are excluded, and schedule mismatches are counted

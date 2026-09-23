@@ -2,7 +2,10 @@ name: daily
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    # 05:23 UTC = 07:23 Stockholm (summer) / 06:23 (winter). Off the hour because GitHub delays
+    # and sometimes drops scheduled runs at the start of the hour. Service dates are chosen in
+    # Stockholm time in pipeline.py, so the trigger's time zone does not matter.
+    - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
       dates:
@@ -49,9 +52,13 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
           GOOGLE_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/sa.json
-          GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          DISPATCH_DATES: ${{ inputs.dates }}
+          DISPATCH_MAX_DATES: ${{ inputs.max_dates }}
+          DISPATCH_SKIP_SHEET: ${{ inputs.skip_sheet }}
         run: |
-          uv run python -m kronoberg_transit.pipeline \
-            ${{ inputs.dates && format('--dates {0}', inputs.dates) || '' }} \
-            ${{ inputs.max_dates && format('--max-dates {0}', inputs.max_dates) || '' }} \
-            ${{ inputs.skip_sheet == 'true' && '--skip-sheet' || '' }}
+          args=()
+          if [ -n "$DISPATCH_DATES" ]; then args+=(--dates "$DISPATCH_DATES"); fi
+          if [ -n "$DISPATCH_MAX_DATES" ]; then args+=(--max-dates "$DISPATCH_MAX_DATES"); fi
+          if [ "$DISPATCH_SKIP_SHEET" = "true" ]; then args+=(--skip-sheet); fi
+          uv run python -m kronoberg_transit.pipeline "${args[@]}"

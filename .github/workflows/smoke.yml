@@ -31,10 +31,16 @@ jobs:
       - name: KoDa check
         env:
           TRAFIKLAB_KODA_KEY: ${{ secrets.TRAFIKLAB_KODA_KEY }}
-        run: uv run python scripts/koda_check.py ${{ inputs.date }}
+          DISPATCH_DATE: ${{ inputs.date }}
+        run: |
+          if [ -n "$DISPATCH_DATE" ]; then
+            uv run python scripts/koda_check.py "$DISPATCH_DATE"
+          else
+            uv run python scripts/koda_check.py
+          fi
 
       - name: Sheet ping
         env:
           GOOGLE_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/sa.json
-          GOOGLE_SHEET_ID: ${{ vars.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: uv run python scripts/setup_sheet.py --ping --run-type smoke-ci

@@ -197,14 +197,17 @@ mirror them.
 
 1. Set secrets without ever echoing a value. `tr -d '\r'` handles Windows line endings:
    ```
-   for name in TRAFIKLAB_KODA_KEY TRAFIKLAB_GTFS_STATIC_KEY TRAFIKLAB_GTFS_RT_KEY HF_TOKEN; do
+   for name in TRAFIKLAB_KODA_KEY TRAFIKLAB_GTFS_STATIC_KEY TRAFIKLAB_GTFS_RT_KEY HF_TOKEN GOOGLE_SHEET_ID; do
      gh secret set "$name" --body "$(grep "^$name=" .env | cut -d= -f2- | tr -d '\r')"
    done
    gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < secrets/google_service_account.json
    ```
+   The Sheet ID is a secret so it is masked in the public Actions logs; access to the
+   Sheet itself is controlled by its sharing settings (restricted to the owner and the
+   pipeline service account).
 2. Set non-secret configuration as repository variables:
    ```
-   for name in HF_DATASET_REPO GOOGLE_SHEET_ID; do
+   for name in HF_DATASET_REPO; do
      gh variable set "$name" --body "$(grep "^$name=" .env | cut -d= -f2- | tr -d '\r')"
    done
    ```
