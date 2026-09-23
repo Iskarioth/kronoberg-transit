@@ -50,6 +50,7 @@ Status labels:
 | Sensitivity | Every headline punctuality figure is also reported at +60 s and +300 s late thresholds, so results do not depend on one arbitrary cut-off. Early stays delay_s < −60 in both versions; on time is −60 ≤ delay_s ≤ +60 (or +300), and late is delay_s > +60 (or +300) | FIXED |
 | Hour of day | The local hour, in the reporting time zone, of a stop event's scheduled departure (D-017) | FIXED |
 | Station | Stop events are grouped by their stop's `parent_station`; a stop without one is its own station (D-017) | FIXED |
+| Route category | Every route is assigned one of four categories — Växjö city lines, Other town lines, Regional lines, School routes — from `config/route_categories.csv`, keyed on `route_id`. Town lines also carry their town. A route missing from the mapping is reported separately, never silently placed (D-022) | FIXED |
 
 ## Exclusions and coverage
 

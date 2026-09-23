@@ -14,9 +14,9 @@ D-017's Reporting time zone) as ISO 8601 strings. `month` is `YYYY-MM`. `day_typ
 `all` (the union of the other three) on every monthly tab (D-017).
 
 `stop_set` (D-019) is `all_stops` | `timing_stops` on `network_monthly`, `route_monthly`,
-`route_daily`, `station_monthly` and `hour_monthly` (`data_quality` and `run_log` are
-unaffected). Every dashboard or query against these five tabs must always filter on
-**both** `stop_set` and `day_type` - a query that only filters `day_type` double-counts
+`route_daily`, `station_monthly`, `hour_monthly` and `category_monthly` (`data_quality` and
+`run_log` are unaffected). Every dashboard or query against these six tabs must always filter
+on **both** `stop_set` and `day_type` - a query that only filters `day_type` double-counts
 every group across the two stop sets.
 
 Two column blocks are shared across tabs:
@@ -43,9 +43,9 @@ non-final stop events (D-008, D-013), restricted to the row's `stop_set` (D-019)
 | reportable | bool | False when eligible_departures = 0, observed_trips < 20, or coverage_share < 0.90 (D-014) |
 | not_reportable_reason | string | Empty when reportable; else `observed_trips<20`, `coverage<90%`, both joined by `;`, or `no_eligible_departures` |
 
-**Trip block T** (`network_monthly`, `route_monthly`, `route_daily`), over all trips
-regardless of scope. Trip block values never depend on `stop_events.is_timing_stop`, so
-they are identical between a row's `all_stops` and `timing_stops` versions (D-019):
+**Trip block T** (`network_monthly`, `route_monthly`, `route_daily`, `category_monthly`), over
+all trips regardless of scope. Trip block values never depend on `stop_events.is_timing_stop`,
+so they are identical between a row's `all_stops` and `timing_stops` versions (D-019):
 
 | Column | Type | Description |
 |---|---|---|
@@ -95,6 +95,8 @@ numbers that map to more than one route_id (D-017).
 | *(T block)* | | |
 | in_scope_share | float, nullable | in_scope_trips ÷ scheduled_trips |
 | *(M block)* | | |
+| route_category | string | `Växjö city lines` \| `Other town lines` \| `Regional lines` \| `School routes` \| `Unmapped`, from `config/route_categories.csv` keyed on `route_id`. `Unmapped` when the route is missing from that file (D-022). Appended as the last column of the row, after `reportable`/`not_reportable_reason` |
+| route_town | string | The route's town for the two town-line categories; empty otherwise, including `Unmapped` (D-022) |
 
 ### `route_daily`
 
@@ -112,6 +114,8 @@ One row per (service_date, route_id). Same shape as `route_monthly` at daily gra
 | *(T block)* | | |
 | in_scope_share | float, nullable | in_scope_trips ÷ scheduled_trips |
 | *(M block)* | | |
+| route_category | string | See `route_monthly`. Appended as the last column of the row (D-022) |
+| route_town | string | See `route_monthly` (D-022) |
 
 ### `station_monthly`
 
@@ -150,6 +154,27 @@ each stop event's scheduled departure (D-017's Hour of day).
 | month_complete | bool | See `network_monthly` |
 | *(M block)* | | |
 
+### `category_monthly`
+
+One row per (month, day_type, stop_set, route_category). Same grain and computation as
+`network_monthly` (T and M blocks computed directly from `trips`/`stop_events`, not by
+summing or averaging `route_monthly`'s per-route figures - route medians do not combine
+into a category median), grouped additionally by `route_category`. A category only has
+rows for the months/day_types in which it actually has scheduled trips, the same
+behaviour as `route_monthly` has per route; `Unmapped` therefore appears only when
+`config/route_categories.csv` is missing a route that ran (D-022).
+
+| Column | Type | Description |
+|---|---|---|
+| month | string | `YYYY-MM` |
+| day_type | string | `all` \| `weekday` \| `saturday` \| `sunday` |
+| stop_set | string | `all_stops` \| `timing_stops` (D-019) |
+| route_category | string | `Växjö city lines` \| `Other town lines` \| `Regional lines` \| `School routes` \| `Unmapped` (D-022) |
+| service_dates | integer | Distinct service dates contributing to this row |
+| month_complete | bool | See `network_monthly` |
+| *(T block)* | | |
+| *(M block)* | | |
+
 ### `data_quality`
 
 One row per service date. Snapshot-count columns come from `feed_quality` (D's own
@@ -183,6 +208,7 @@ D+1 window is the right one for judging D's trips.
 | dst_ambiguous_departures | integer | `feed_quality.dst_ambiguous_departures` (D-021) |
 | schedule_mismatch_stop_events | integer | `feed_quality.schedule_mismatch_stop_events`. Expected to be zero (D-021) |
 | unmatched_realtime_trips | integer | `feed_quality.unmatched_realtime_trips`. Expected to be zero (D-021) |
+| unmapped_route_trips | integer | In-scope trips that day whose `route_id` is missing from `config/route_categories.csv`. Expected to be zero; a non-zero count marks that build's aggregate run_log row as a warning, not a stop (D-022) |
 
 ### `run_log`
 

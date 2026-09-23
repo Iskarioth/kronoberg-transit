@@ -349,11 +349,16 @@ def download_hf_dataset(repo_id: str, token: str, local_dir: Path) -> Path:
 def rebuild_sheet(sh, warehouse_dir: Path) -> None:
     """Rebuilds every tab and appends exactly one run_log row, with
     run_type='pipeline' (D-021 Part 1: one row per event, not one from this
-    function plus another from the caller)."""
+    function plus another from the caller). D-022: a non-zero
+    unmapped_route_trips anywhere in data_quality marks that row status
+    'warning' and names the route_ids, mirroring the D-021 tripwires."""
     t0 = time.monotonic()
     con = duckdb.connect()
     aggregate.build_tables(con, warehouse_dir=warehouse_dir)
     aggregate.run_consistency_checks(con)
+    any_unmapped, unmapped_message = aggregate.check_unmapped_routes(con)
+    if any_unmapped:
+        print(f"  WARNING: {unmapped_message}")
     counts = {}
     for t in aggregate.TABS:
         counts[t] = aggregate.write_sheet_tab(sh, con, t)
@@ -361,7 +366,13 @@ def rebuild_sheet(sh, warehouse_dir: Path) -> None:
     deleted = aggregate.delete_retired_tabs(sh)
     duration = time.monotonic() - t0
     message = f"tabs rebuilt: {counts}; retired tabs deleted: {deleted}"
-    aggregate.append_run_log(sh, sum(counts.values()), duration, message, run_type="pipeline")
+    status = "ok"
+    if any_unmapped:
+        status = "warning"
+        message += f"; {unmapped_message}"
+    aggregate.append_run_log(
+        sh, sum(counts.values()), duration, message, run_type="pipeline", status=status
+    )
     print(f"Rebuilt {len(aggregate.TABS)} tabs: {counts}")
 
 

@@ -96,6 +96,16 @@ FROM all_stop_events
 WHERE stop_position != 'final'
 GROUP BY service_date;
 
+-- D-022: in-scope trips per date whose route_id is missing from
+-- config/route_categories.csv. Expected to be zero; a non-zero count marks
+-- that build's aggregate run_log row as a warning.
+CREATE OR REPLACE TABLE unmapped_route_agg AS
+SELECT t.service_date, COUNT(*) AS unmapped_route_trips
+FROM all_trips t
+LEFT JOIN route_categories rc ON rc.route_id = t.route_id
+WHERE t.in_scope AND rc.route_id IS NULL
+GROUP BY t.service_date;
+
 CREATE OR REPLACE TABLE data_quality AS
 SELECT
     dt.service_date, dt.day_type,
@@ -114,7 +124,8 @@ SELECT
     ROUND(ca.observed_departures::DOUBLE / NULLIF(ca.eligible_departures, 0), 4) AS coverage_share,
     COALESCE(da.dst_ambiguous_departures, 0) AS dst_ambiguous_departures,
     fq.schedule_mismatch_stop_events,
-    fq.unmatched_realtime_trips
+    fq.unmatched_realtime_trips,
+    COALESCE(ua.unmapped_route_trips, 0) AS unmapped_route_trips
 FROM day_types dt
 JOIN all_feed_quality fq ON fq.service_date = dt.service_date
 JOIN gap_agg ga ON ga.service_date = dt.service_date
@@ -123,4 +134,5 @@ LEFT JOIN outage_minutes_06_22_agg om ON om.service_date = dt.service_date
 JOIN marker_agg ma ON ma.service_date = dt.service_date
 JOIN trip_agg_dq ta ON ta.service_date = dt.service_date
 JOIN coverage_agg ca ON ca.service_date = dt.service_date
-LEFT JOIN dst_ambiguous_agg da ON da.service_date = dt.service_date;
+LEFT JOIN dst_ambiguous_agg da ON da.service_date = dt.service_date
+LEFT JOIN unmapped_route_agg ua ON ua.service_date = dt.service_date;

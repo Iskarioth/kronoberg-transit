@@ -77,8 +77,13 @@ JOIN route_labels rl ON rl.route_id = k.route_id
 LEFT JOIN se_agg sa ON sa.month = k.month AND sa.day_type = k.day_type AND sa.stop_set = k.stop_set AND sa.route_id = k.route_id
 JOIN month_completeness mc ON mc.month = k.month;
 
+-- route_category/route_town (D-022) are appended as the LAST two columns,
+-- after reportable/not_reportable_reason: existing Data Studio sources read
+-- these tabs by column order and must not have earlier columns shifted.
+-- Routes missing from config/route_categories.csv get category 'Unmapped'
+-- and an empty town.
 CREATE OR REPLACE TABLE route_monthly AS
-SELECT *,
+SELECT rmr.*,
     CASE
         WHEN eligible_departures = 0 THEN 'no_eligible_departures'
         WHEN observed_trips < 20 AND coverage_share < 0.90 THEN 'observed_trips<20;coverage<90%'
@@ -91,5 +96,8 @@ SELECT *,
         WHEN observed_trips < 20 THEN false
         WHEN coverage_share < 0.90 THEN false
         ELSE true
-    END AS reportable
-FROM route_monthly_raw;
+    END AS reportable,
+    COALESCE(rc.category, 'Unmapped') AS route_category,
+    COALESCE(rc.town, '') AS route_town
+FROM route_monthly_raw rmr
+LEFT JOIN route_categories rc ON rc.route_id = rmr.route_id;

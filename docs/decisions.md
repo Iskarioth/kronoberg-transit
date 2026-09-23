@@ -746,3 +746,27 @@ expected to be zero. The date guard added in D-020 is removed.
   their real service date, which the count explains.
 - The pipeline no longer refuses dates next to a daylight-saving change (D-020).
 - Everywhere else, scheduled times still follow the GTFS noon-minus-12-hours rule.
+
+---
+
+## D-022 · 2026-09-23 · Route category
+
+**Decision:** every route is assigned one of four categories — Växjö city lines, Other town lines,
+Regional lines, School routes — from config/route_categories.csv, keyed on route_id. Town lines
+also carry their town. The category is applied at aggregation: route_monthly and route_daily gain
+route_category and route_town, and a new category_monthly tab gives network figures per category.
+In-scope trips on routes missing from the mapping are counted per service date as
+unmapped_route_trips in data_quality; a non-zero count makes the run a warning, not a stop.
+
+**Reason:** a single ranking across all routes compared short, frequent town lines with 50–90 km
+regional lines and school runs of a few trips a day; at timing stops in September 2026 the two
+latest reportable routes were a school run (795) and an 80 km regional line (840). The static GTFS
+carries no category: route_desc is empty and route_type and agency_id are identical on all 136
+routes. Route short names repeat across towns (route 1 exists in Växjö, Älmhult and Alvesta), so
+neither a field nor a number rule can place town lines correctly. The number ranges 100–699 and
+800+ (regional) and 700–799 (school) match route structure on 2026-09-21 and are used for the
+initial mapping; town-line assignments come from local knowledge.
+
+**Consequences:** the mapping must be reviewed when new route_ids appear, most likely at timetable
+changes; the tripwire makes that visible. Route 25 (no trips on 2026-09-21, town unknown) is
+intentionally unmapped. The Parquet warehouse and the Hugging Face dataset are unchanged.
