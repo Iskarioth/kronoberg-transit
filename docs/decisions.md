@@ -710,6 +710,12 @@ expected to be zero. The date guard added in D-020 is removed.
   the operator's time. As a result, 118 departures between 03:00 and 04:20 local on
   2026-03-29 got delays inflated by about an hour. Two stops written 27:00 were off by
   about 57 minutes.
+- After the rule, one departure on the 2026-03-28 service still shows a large delay:
+  route 7, trip 76110000042348084, stop 7, scheduled 25:55:22 (01:55 local, five minutes
+  before the clock change). Its recorded departure is 04:00:01 local, 65 minutes later
+  in elapsed time. The feed's own scheduled time agrees with the pipeline's, and the
+  recorded time comes from the feed, so it is kept as an observed departure. The data
+  cannot show whether the delay was real or a clock fault at the operator.
 - Around the autumn change (2025-10-25 and 2025-10-26 service), published delays were
   clean: no observed departure was 30 minutes or more off. The rule covers autumn too,
   because the evidence is one night of each kind, and one symmetric rule is easier to
