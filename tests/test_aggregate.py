@@ -18,6 +18,7 @@ and 2026-09-07 (Monday), filtered to a handful of real routes chosen to cover:
 routes/stops/feed_quality/feed_gaps are kept in full for these three dates.
 """
 
+import datetime as dt
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -230,6 +231,306 @@ def test_station_fallback_when_no_parent_station(con):
         f"SELECT station_name FROM station_names WHERE station_id = '{station_id}'"
     ).fetchone()[0]
     assert station_name == own_name
+
+
+# --------------------------------------------------------------------------
+# Station coordinates (station_lat, station_lon in station_monthly)
+# --------------------------------------------------------------------------
+#
+# A small synthetic warehouse, not the real fixture: station S1 has its own
+# stops row with coordinates that differ between 2026-09-05 (Saturday) and
+# 2026-09-10 (Thursday), both in month 2026-09. S1 is never itself a stop
+# event; it is only reached through its child stop C1 (parent_station=S1,
+# with its own, deliberately different coordinates, so a test that reads
+# C1's coordinates instead of S1's would fail). Station S2 has no
+# parent_station and a single date's coordinates.
+
+
+def _write_table(table_dir: Path, service_date: str, schema: pa.Schema, rows: list[dict]) -> None:
+    part_dir = table_dir / f"service_date={service_date}"
+    part_dir.mkdir(parents=True)
+    table = pa.Table.from_pylist(rows, schema=schema)
+    pq.write_table(table, part_dir / "part-0.parquet")
+
+
+def _build_station_coords_warehouse(base_dir: Path) -> Path:
+    trips_schema = pa.schema(
+        [
+            ("service_date", pa.date32()),
+            ("route_id", pa.string()),
+            ("trip_id", pa.string()),
+            ("direction_id", pa.int64()),
+            ("scheduled_first_departure_utc", pa.timestamp("us")),
+        ]
+    )
+    stop_events_schema = pa.schema(
+        [
+            ("service_date", pa.date32()),
+            ("trip_id", pa.string()),
+            ("route_id", pa.string()),
+            ("stop_sequence", pa.int64()),
+            ("stop_id", pa.string()),
+            ("stop_position", pa.string()),
+            ("in_scope", pa.bool_()),
+            ("is_timing_stop", pa.bool_()),
+            ("status", pa.string()),
+            ("delay_s", pa.int64()),
+        ]
+    )
+    routes_schema = pa.schema(
+        [
+            ("service_date", pa.date32()),
+            ("route_id", pa.string()),
+            ("route_short_name", pa.string()),
+        ]
+    )
+    stops_schema = pa.schema(
+        [
+            ("service_date", pa.date32()),
+            ("stop_id", pa.string()),
+            ("stop_name", pa.string()),
+            ("stop_lat", pa.float64()),
+            ("stop_lon", pa.float64()),
+            ("parent_station", pa.string()),
+        ]
+    )
+    empty_schema = pa.schema([("service_date", pa.date32())])
+
+    d05, d10 = "2026-09-05", "2026-09-10"
+
+    _write_table(
+        base_dir / "trips",
+        d05,
+        trips_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "route_id": "R1",
+                "trip_id": "T1",
+                "direction_id": 0,
+                "scheduled_first_departure_utc": dt.datetime(2026, 9, 5, 10, 0, 0),  # noqa: DTZ001 - naive UTC, matching the warehouse's own timestamp columns
+            }
+        ],
+    )
+    _write_table(
+        base_dir / "trips",
+        d10,
+        trips_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 10),
+                "route_id": "R1",
+                "trip_id": "T2",
+                "direction_id": 0,
+                "scheduled_first_departure_utc": dt.datetime(2026, 9, 10, 10, 0, 0),  # noqa: DTZ001 - naive UTC, matching the warehouse's own timestamp columns
+            }
+        ],
+    )
+
+    _write_table(
+        base_dir / "stop_events",
+        d05,
+        stop_events_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "trip_id": "T1",
+                "route_id": "R1",
+                "stop_sequence": 1,
+                "stop_id": "C1",
+                "stop_position": "first",
+                "in_scope": True,
+                "is_timing_stop": True,
+                "status": "observed",
+                "delay_s": 30,
+            },
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "trip_id": "T1",
+                "route_id": "R1",
+                "stop_sequence": 2,
+                "stop_id": "S2",
+                "stop_position": "intermediate",
+                "in_scope": True,
+                "is_timing_stop": True,
+                "status": "observed",
+                "delay_s": -10,
+            },
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "trip_id": "T1",
+                "route_id": "R1",
+                "stop_sequence": 3,
+                "stop_id": "ZFIN",
+                "stop_position": "final",
+                "in_scope": True,
+                "is_timing_stop": True,
+                "status": None,
+                "delay_s": None,
+            },
+        ],
+    )
+    _write_table(
+        base_dir / "stop_events",
+        d10,
+        stop_events_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 10),
+                "trip_id": "T2",
+                "route_id": "R1",
+                "stop_sequence": 1,
+                "stop_id": "C1",
+                "stop_position": "first",
+                "in_scope": True,
+                "is_timing_stop": True,
+                "status": "observed",
+                "delay_s": 50,
+            },
+            {
+                "service_date": dt.date(2026, 9, 10),
+                "trip_id": "T2",
+                "route_id": "R1",
+                "stop_sequence": 2,
+                "stop_id": "ZFIN2",
+                "stop_position": "final",
+                "in_scope": True,
+                "is_timing_stop": True,
+                "status": None,
+                "delay_s": None,
+            },
+        ],
+    )
+
+    _write_table(
+        base_dir / "routes",
+        d05,
+        routes_schema,
+        [{"service_date": dt.date(2026, 9, 5), "route_id": "R1", "route_short_name": "9"}],
+    )
+    _write_table(
+        base_dir / "routes",
+        d10,
+        routes_schema,
+        [{"service_date": dt.date(2026, 9, 10), "route_id": "R1", "route_short_name": "9"}],
+    )
+
+    _write_table(
+        base_dir / "stops",
+        d05,
+        stops_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "stop_id": "S1",
+                "stop_name": "Station One",
+                "stop_lat": 57.0,
+                "stop_lon": 14.0,
+                "parent_station": None,
+            },
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "stop_id": "C1",
+                "stop_name": "Child Stop",
+                "stop_lat": 56.0,
+                "stop_lon": 13.0,
+                "parent_station": "S1",
+            },
+            {
+                "service_date": dt.date(2026, 9, 5),
+                "stop_id": "S2",
+                "stop_name": "Solo Stop",
+                "stop_lat": 56.5,
+                "stop_lon": 15.0,
+                "parent_station": None,
+            },
+        ],
+    )
+    _write_table(
+        base_dir / "stops",
+        d10,
+        stops_schema,
+        [
+            {
+                "service_date": dt.date(2026, 9, 10),
+                "stop_id": "S1",
+                "stop_name": "Station One",
+                "stop_lat": 57.5,
+                "stop_lon": 14.5,
+                "parent_station": None,
+            },
+            {
+                "service_date": dt.date(2026, 9, 10),
+                "stop_id": "C1",
+                "stop_name": "Child Stop",
+                "stop_lat": 56.0,
+                "stop_lon": 13.0,
+                "parent_station": "S1",
+            },
+        ],
+    )
+
+    for feed_table in ("feed_quality", "feed_gaps"):
+        _write_table(base_dir / feed_table, d05, empty_schema, [])
+        _write_table(base_dir / feed_table, d10, empty_schema, [])
+
+    return base_dir
+
+
+def _build_base_and_station_monthly(con: duckdb.DuckDBPyConnection, warehouse_dir: Path) -> None:
+    con.execute(render_sql("aggregate_base.sql", warehouse_dir=warehouse_dir.as_posix()))
+    con.execute(render_sql("aggregate_station_monthly.sql"))
+
+
+@pytest.fixture
+def station_coords_con(tmp_path):
+    warehouse_dir = _build_station_coords_warehouse(tmp_path)
+    c = duckdb.connect()
+    _build_base_and_station_monthly(c, warehouse_dir)
+    yield c
+    c.close()
+
+
+def test_station_with_parent_gets_parent_station_coords(station_coords_con):
+    """C1 (parent_station=S1) has its own coordinates (56.0, 13.0), distinct
+    from S1's. Station S1's station_monthly rows must carry S1's own stops
+    row values, never C1's."""
+    rows = station_coords_con.execute(
+        "SELECT DISTINCT station_lat, station_lon FROM station_monthly WHERE station_id = 'S1'"
+    ).fetchall()
+    assert rows == [(57.5, 14.5)]  # S1's own coordinates, and the later date wins (below)
+    assert (56.0, 13.0) not in rows  # never C1's own coordinates
+
+
+def test_station_without_parent_gets_its_own_coords(station_coords_con):
+    """S2 has no parent_station, so it is its own station, with its own
+    (single-date) coordinates."""
+    rows = station_coords_con.execute(
+        "SELECT DISTINCT station_lat, station_lon FROM station_monthly WHERE station_id = 'S2'"
+    ).fetchall()
+    assert rows == [(56.5, 15.0)]
+
+
+def test_station_coords_use_the_later_dates_values(station_coords_con):
+    """S1's own stops row has coordinates (57.0, 14.0) on 2026-09-05 and
+    (57.5, 14.5) on 2026-09-10, both within 2026-09. The later date wins."""
+    rows = station_coords_con.execute(
+        "SELECT DISTINCT station_lat, station_lon FROM station_monthly WHERE station_id = 'S1'"
+    ).fetchall()
+    assert rows == [(57.5, 14.5)]
+
+
+def test_station_coords_identical_across_day_type_and_stop_set(station_coords_con):
+    """Every day_type/stop_set row of one station-month must carry the same
+    coordinates: S1 has rows for day_type in ('all', 'weekday', 'saturday')
+    and stop_set in ('all_stops', 'timing_stops'), all for month 2026-09."""
+    rows = station_coords_con.execute(
+        """SELECT day_type, stop_set, station_lat, station_lon
+           FROM station_monthly WHERE station_id = 'S1' AND month = '2026-09'"""
+    ).fetchall()
+    assert len(rows) >= 2  # more than one day_type/stop_set combination is present
+    distinct_coords = {(lat, lon) for _, _, lat, lon in rows}
+    assert distinct_coords == {(57.5, 14.5)}
 
 
 def test_build_is_deterministic():

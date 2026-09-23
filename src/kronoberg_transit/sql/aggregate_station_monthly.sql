@@ -38,9 +38,24 @@ route_names AS (
     FROM (SELECT DISTINCT month, day_type, stop_set, station_id, route_id FROM se_station) s
     JOIN canonical_routes cr ON cr.route_id = s.route_id
     GROUP BY month, day_type, stop_set, station_id
+),
+-- Station coordinates, per month: the station's own row in stops
+-- (station_id = stops.stop_id, D-017), from the latest service_date within
+-- that month on which that stop_id appears. Per month, not globally, since
+-- coordinates can drift date to date within the warehouse. arg_max mirrors
+-- the canonical_stops "latest value" pattern in aggregate_base.sql, keyed
+-- here by (month, stop_id) instead of stop_id alone.
+station_coords_monthly AS (
+    SELECT dt.month, s.stop_id AS station_id,
+           arg_max(s.stop_lat, s.service_date) AS station_lat,
+           arg_max(s.stop_lon, s.service_date) AS station_lon
+    FROM all_stops s
+    JOIN day_types dt ON dt.service_date = s.service_date
+    GROUP BY dt.month, s.stop_id
 )
 SELECT
     sa.month, sa.day_type, sa.stop_set, sa.station_id, sn.station_name,
+    scm.station_lat, scm.station_lon,
     COALESCE(rn.route_short_names, '') AS route_short_names,
     mc.month_complete,
     sa.eligible_departures, sa.observed_departures, sa.unobserved_departures,
@@ -56,6 +71,7 @@ SELECT
     sa.median_delay_s, sa.p90_delay_s
 FROM se_agg sa
 JOIN station_names sn ON sn.station_id = sa.station_id
+LEFT JOIN station_coords_monthly scm ON scm.month = sa.month AND scm.station_id = sa.station_id
 LEFT JOIN route_names rn ON rn.month = sa.month AND rn.day_type = sa.day_type AND rn.stop_set = sa.stop_set AND rn.station_id = sa.station_id
 JOIN month_completeness mc ON mc.month = sa.month;
 

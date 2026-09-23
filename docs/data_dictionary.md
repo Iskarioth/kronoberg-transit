@@ -130,6 +130,8 @@ the station has any non-final in-scope stop event, even with zero eligible depar
 | stop_set | string | `all_stops` \| `timing_stops` (D-019) |
 | station_id | string | The station's `stop_id` (its own, or its members' `parent_station`) |
 | station_name | string | The station's `stop_name` |
+| station_lat | double | Latitude of the station's own `stops` row (the stop itself, or its `parent_station`), from the latest service date in the row's month on which that row appears |
+| station_lon | double | Longitude, from the same row as `station_lat` |
 | route_short_names | string | Distinct route short names serving this station, sorted, comma-separated |
 | month_complete | bool | See `network_monthly` |
 | *(M block)* | | |
