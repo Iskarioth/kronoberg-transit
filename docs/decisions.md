@@ -770,3 +770,40 @@ initial mapping; town-line assignments come from local knowledge.
 **Consequences:** the mapping must be reviewed when new route_ids appear, most likely at timetable
 changes; the tripwire makes that visible. Route 25 (no trips on 2026-09-21, town unknown) is
 intentionally unmapped. The Parquet warehouse and the Hugging Face dataset are unchanged.
+
+---
+
+## D-023 · 2026-09-24 · Daily run started by an external scheduler
+
+**Decision:** A cron-job.org job ("kronoberg-transit daily") sends
+`POST https://api.github.com/repos/Iskarioth/kronoberg-transit/actions/workflows/daily.yml/dispatches`
+with body `{"ref":"main"}` once a day at 06:47 Europe/Stockholm, authenticating with a
+fine-grained personal access token ("kronoberg-transit-dispatch": resource owner Iskarioth, this
+repository only, repository permission Actions: read and write, plus the mandatory Metadata: read,
+expiring 2027-03-23). The token is stored only in cron-job.org and Marcus's password manager,
+never in the repo, `.env` or GitHub secrets. cron-job.org emails Marcus when the request fails.
+The cron trigger in `daily.yml` stays as a fallback.
+
+**Reason:** From the schedule's first commit to main through 2026-09-24, GitHub created zero
+scheduled runs of `daily.yml`, first with cron `0 6 * * *`, then `23 5 * * *` (commit 2acb991).
+All daily runs so far (#1–#7) and all smoke runs were started by `workflow_dispatch`. The
+workflow file is valid and on the default branch, and dispatch works, so the missing runs are
+not caused by the repo. An external scheduler runs every day without Marcus's PC being on
+(unlike Windows Task Scheduler) and without a manual click, which the project's claim of an
+automated pipeline depends on.
+
+**Consequences:**
+
+- A missed trigger costs freshness, not data: `select_dates` picks up to 7 missing dates per run
+  (`DEFAULT_MAX_DATES`) and processes dates up to today minus 2 days (Stockholm).
+- Normal lag is two days. The dashboard's "Data through" date (max `service_date` in
+  `data_quality`) is the freshness signal; a longer lag means a missed trigger or a failed run.
+  cron-job.org only sees whether GitHub accepted the request (HTTP 204), not whether the run
+  succeeded; run failures show in the Actions tab and in `run_log`.
+- Runs started this way appear in Actions as "Manually run by Iskarioth", because the token acts
+  as Marcus.
+- If GitHub's own schedule starts firing too, the second run of the day finds no new dates but
+  still rebuilds the Sheet and appends a second pipeline aggregate row to `run_log`. Harmless;
+  remove the cron line if it becomes noise.
+- The token must be rotated before 2027-03-23. An expired token makes the request return 401 and
+  cron-job.org notifies Marcus.

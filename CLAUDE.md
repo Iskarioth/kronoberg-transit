@@ -20,10 +20,11 @@ KoDa archive (raw, never stored by us)
 
 `kronoberg_transit.pipeline` runs this end to end for one or more service dates: fetch,
 transform, upload that date's partitions to the Hugging Face dataset, then rebuild the
-Sheet from the full dataset (D-020). A scheduled GitHub Actions workflow
-(`.github/workflows/daily.yml`) runs it once a day, picking up the dates missing from
-the dataset. Stop events in the daylight-saving window are marked `dst_ambiguous`
-rather than blocking the date (D-021).
+Sheet from the full dataset (D-020). The `.github/workflows/daily.yml` workflow runs it
+once a day, started by an external scheduler through `workflow_dispatch` (D-023), with
+its own cron trigger kept as a fallback, picking up the dates missing from the dataset.
+Stop events in the daylight-saving window are marked `dst_ambiguous` rather than
+blocking the date (D-021).
 
 Metric definitions live in `docs/definitions.md`. That file is the source of truth.
 Design decisions live in `docs/decisions.md`.

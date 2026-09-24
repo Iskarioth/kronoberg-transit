@@ -22,6 +22,13 @@ Metric definitions live in [`docs/definitions.md`](docs/definitions.md) — that
 the source of truth. Design decisions are logged in
 [`docs/decisions.md`](docs/decisions.md).
 
+### Scheduling
+
+The daily workflow is started by [cron-job.org](https://cron-job.org) through GitHub's
+`workflow_dispatch` API, because GitHub's own scheduled trigger has never fired for this
+repo. The workflow's `cron` trigger stays in place as a fallback. Data normally lags two
+days behind the current date; see [D-023](docs/decisions.md) for details.
+
 ## Data sources
 
 - **[Trafiklab](https://www.trafiklab.se/)** — GTFS Regional static and realtime feeds
