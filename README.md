@@ -12,6 +12,7 @@ dashboard, with the full pipeline, decisions and definitions open for review.
 - [Parquet dataset](https://huggingface.co/datasets/Traumenteize/kronoberg-transit-punctuality)
 - [Dashboard guide, verification and next steps](docs/dashboard.md)
 - [September 2026 portfolio case study](docs/case-study.md)
+- [Next analytical questions and feasibility checks](docs/analysis-opportunities.md)
 - Portfolio presentation: [English](docs/portfolio-en.md) · [Svenska](docs/portfolio-sv.md)
 
 The report contains Overview, When, Routes, Stations, Data quality and About.
