@@ -869,8 +869,8 @@ establish causes, future performance or network-wide ranking. See
 
 **Service-category clarification, 11 October 2026:** Marcus clarified that route
 840 must be viewed separately as a regional bus. Candidate rankings now partition
-by the existing `config/route_categories.csv` categories. City lines remain grouped
-by their existing town-specific categories, while regional lines have their own
+by the existing `config/route_categories.csv` categories. City lines retain their
+existing categories and town labels, while regional lines have their own
 analysis. The original mixed-category screen is documented as such; the selected
 examples are retained as separate regional and city cases, without a cross-category
 performance comparison. No route classifications or metric definitions changed.

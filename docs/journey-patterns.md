@@ -102,8 +102,11 @@ the 20-trip reporting floor; their delay summaries are withheld here.
   `3cb190163d9c400fd915bd62a919f8f9bfc90dd7`. The reproduction checks local
   files against the saved SHA-256 manifest before querying.
 - Service categories and towns come from the existing route-ID mapping in
-  `config/route_categories.csv`. Regional buses and each town's city lines remain
-  separate candidate groups; school and other categories retain their own labels.
+  `config/route_categories.csv`. Regional and city route categories remain
+  separate candidate groups; town labels are retained for further comparisons.
+  The existing "Other town lines" category covers multiple towns, so its
+  candidate list is a screen rather than a comparison of matched city services.
+  School and other categories retain their own labels.
   Unmapped routes are marked explicitly rather than silently treated as city buses.
   Metric definitions are identical across groups, but performance comparisons
   stay within a service category and comparable journey patterns.
