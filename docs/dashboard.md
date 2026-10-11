@@ -13,6 +13,7 @@ or source-calculation audit.
   access has not been verified.
 - [Public Parquet dataset](https://huggingface.co/datasets/Traumenteize/kronoberg-transit-punctuality).
 - [September portfolio case study](case-study.md), with pinned-data reproduction.
+- Short portfolio presentations: [English](portfolio-en.md) and [Svenska](portfolio-sv.md).
 - Pipeline code, [metric definitions](definitions.md), [schema](data_dictionary.md)
   and [decision log](decisions.md) in this repository.
 
@@ -116,10 +117,11 @@ schedule had not fired. It does not establish that every historical run succeede
    dataset revision `3cb190163d9c400fd915bd62a919f8f9bfc90dd7`. All 229 aggregation
    consistency checks passed; independent raw-stop-event counts match the
    headline. See [case-study.md](case-study.md) and the reproduction script.
-3. **Reader access needs an explicit sharing decision.** On 11 October the
+3. **Report remains restricted by the owner's choice.** On 11 October the
    report's sharing dialog showed **Restricted**, with only the owner listed.
    A portfolio reader cannot access that report under the verified settings.
-   No access permissions were changed during the inspection.
+   The owner chose to keep access restricted. The portfolio presentations use
+   an approved dashboard screenshot; no access permissions were changed.
 4. **Resolve open definitions with evidence when needed.** The recorded-time
    marker alert threshold and public-holiday day classification remain OPEN in
    definitions.md. Do not choose thresholds or implement dependent logic without

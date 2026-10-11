@@ -2,6 +2,10 @@
 
 **September 2026 · 30 complete service dates · timing-stop departures**
 
+For a shorter portfolio presentation: [English](portfolio-en.md) ·
+[Svenska](portfolio-sv.md). This page preserves the detailed evidence and
+reproduction steps.
+
 Kronoberg's realtime records show **78.23% of observed timing-stop departures
 on time**, with **98.44% coverage**. The lowest reportable weekday hourly
 punctuality was **62.62% at 16:00–16:59**. These results identify where a further
