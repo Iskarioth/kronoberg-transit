@@ -14,6 +14,8 @@ records the queries and checks.
 The first [journey and recurring-departure study](journey-patterns.md) now follows
 route 840's 16:15 departure and Växjö route 1's Stortorget–Dalbo section through
 complete September data, with reproducible queries and explicit paired coverage.
+Regional buses are analysed separately from city buses; city comparisons retain
+the town categories already defined in the route mapping.
 
 ## Recommended order
 

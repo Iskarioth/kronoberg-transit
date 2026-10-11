@@ -8,11 +8,15 @@ Two examples show why these views are useful. A monthly route average can hide
 both a recurring weak departure and recovery partway through its journey.
 
 This is a frozen September analysis, not a statement about today's services.
-The examples were selected after screening weekday departures starting from
-15:00 to 17:59 by late-observation volume. They are investigation leads, not
+The original examples were selected after screening weekday departures starting
+from 15:00 to 17:59 by late-observation volume across categories. The reproduction
+now screens and ranks candidates **within each existing route category**. Regional
+route 840 is a separate regional case; Växjö route 1 is a city-bus case. Their
+results are not a common league table or evidence that one service type performs
+better than the other. They are investigation leads, not
 estimates of the typical route or a claim to have found the network's worst services.
 
-## Route 840: the 16:15 departure from Växjö towards Ronneby
+## Regional buses — route 840 from Växjö towards Ronneby at 16:15
 
 This exact stop and running-time pattern operated on all 22 September weekdays.
 There were 131 observed timing-stop departures out of 132 eligible: 99.24%
@@ -69,13 +73,14 @@ The afternoon result is much weaker than the earlier and later departures in
 this pattern. This describes recorded September performance. It does not identify
 traffic, timetable allowances, passenger volumes or vehicle carryover as its cause.
 
-## Växjö route 1: Stortorget to Dalbo Centrum
+## Växjö city buses — route 1 from Stortorget to Dalbo Centrum
 
 For one fixed direction-0 stop and running-time pattern, weekday journeys
 starting between 15:00 and 17:59 supplied 362 observed adjacent pairs out of
 363 eligible pairs (99.72% paired coverage). The median recorded delay increase
 between Stortorget and Dalbo Centrum was **163 seconds**. Both are intermediate
-timing stops, which makes this a useful companion to the first-stop example above.
+timing stops. This finding belongs to the city-bus analysis and is not benchmarked
+against the regional route 840 result.
 
 The increase also appeared outside the afternoon. Grouping by the journey's
 scheduled start hour, the median was +57.5 seconds at 08:00–08:59 (132 pairs),
@@ -96,6 +101,12 @@ the 20-trip reporting floor; their delay summaries are withheld here.
 - Source: the complete September warehouse pinned to revision
   `3cb190163d9c400fd915bd62a919f8f9bfc90dd7`. The reproduction checks local
   files against the saved SHA-256 manifest before querying.
+- Service categories and towns come from the existing route-ID mapping in
+  `config/route_categories.csv`. Regional buses and each town's city lines remain
+  separate candidate groups; school and other categories retain their own labels.
+  Unmapped routes are marked explicitly rather than silently treated as city buses.
+  Metric definitions are identical across groups, but performance comparisons
+  stay within a service category and comparable journey patterns.
 - Journey identity within a date is `(service_date, trip_id)`. Recurring identity
   is route ID, direction, ordered stop IDs, timing-stop flags, scheduled running
   times, service-relative start time and weekday/Saturday/Sunday class. Times
@@ -129,11 +140,13 @@ causal or statistical-significance claim.
 
 ## Practical next step
 
-Build a journey explorer with a route, direction, stop-pattern and scheduled-start
+Build a journey explorer with a service category and town selector, then route,
+direction, stop-pattern and scheduled-start
 selector; a trace for each service date; and a paired-delay table that shows
 missingness. Beside it, show recurring departure results by weekday date so
-occasional outliers are distinguishable from repeatable weak sections. Route 840
-16:15 and route 1 Stortorget–Dalbo are useful initial examples. The current Sheet
+occasional outliers are distinguishable from repeatable weak sections. Keep a
+regional-bus view, starting with route 840 at 16:15, separate from city-bus views,
+starting with Växjö route 1 Stortorget–Dalbo. The current Sheet
 aggregates cannot supply these traces; the warehouse must provide a new analysis
 table before extending the live report.
 

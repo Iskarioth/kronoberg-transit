@@ -26,6 +26,16 @@ def main() -> None:
         path = SNAPSHOT / entry["path"]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"], path
     con = duckdb.connect()
+    category_path = (ROOT / "config" / "route_categories.csv").as_posix()
+    con.execute(
+        f"CREATE VIEW route_categories AS SELECT * FROM read_csv('{category_path}',all_varchar=true)"
+    )
+    assert (
+        con.execute(
+            "SELECT count(*) FROM (SELECT route_id FROM route_categories GROUP BY 1 HAVING count(*)>1)"
+        ).fetchone()[0]
+        == 0
+    )
     for table in ("stop_events", "trips", "routes", "stops"):
         path = (SNAPSHOT / "data" / table / "service_date=*" / "*.parquet").as_posix()
         con.execute(
@@ -77,6 +87,8 @@ def main() -> None:
     for row in results["focus_keys"]["rows"]:
         assert row["observed_trips"] == row["observed_dates"] == 22
         assert row["coverage"] >= 0.9
+        expected = "Regional lines" if row["route_short_name"] == 840 else "Växjö city lines"
+        assert row["category"] == expected
     for row in results["focus_pairs"]["rows"]:
         assert row["observed_pairs"] <= row["eligible_pairs"]
         assert row["ontime_to_late"] + row["late_to_ontime"] <= row["observed_pairs"]
@@ -95,6 +107,9 @@ def main() -> None:
     receipt = {
         "dataset": manifest["dataset"],
         "revision": REVISION,
+        "route_categories_sha256": hashlib.sha256(
+            (ROOT / "config" / "route_categories.csv").read_bytes()
+        ).hexdigest(),
         "executed_at": dt.datetime.now(dt.UTC).isoformat(),
         "sha256_files_verified": len(manifest["files"]),
         "setup_sql": parts[0],
