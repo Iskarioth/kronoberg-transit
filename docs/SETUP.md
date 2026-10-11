@@ -1,5 +1,12 @@
 # HANDOFF: bootstrap kronoberg-transit
 
+> Historical setup record from 21 September 2026. The instructions below describe
+> the original bootstrap and must not be rerun as a current task. The pipeline and
+> dashboard are now implemented. See [dashboard.md](dashboard.md) for the current
+> delivery status and next steps, [definitions.md](definitions.md) for metric rules,
+> and [data_dictionary.md](data_dictionary.md) for the current schema. The initial
+> tab names and the "Next session" section below have been superseded.
+
 You are setting up the infrastructure for this project. **This session is setup only.**
 Do not build the pipeline (fetching, parsing, transforming) yet; that is the next session.
 
