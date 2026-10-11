@@ -842,3 +842,27 @@ about all historical runs.
 - Verification: all 158 existing tests passed using a project-local temporary
   directory; lint and formatting checks passed. September's pinned dataset
   separately passed all 229 aggregation consistency checks.
+
+---
+
+## D-025 · 2026-10-11 · Keep recurring journey comparisons at fixed schedule grain
+
+**Decision:** For the exploratory September journey study, identify a recurring
+departure by route ID, direction, ordered stop IDs, timing-stop flags, scheduled
+departure offsets from the first departure, service-relative scheduled start
+time, and day type. Do not assume trip IDs remain stable across service dates.
+Exclude an entire recurring key if it matches multiple trips on any date.
+
+**Reason:** Four recurring keys account for 65 ambiguous date/key combinations.
+Pooling them would disguise simultaneous services as one repeated departure.
+Keeping scheduled offsets also prevents different running-time patterns being
+merged just because they use the same stops. Full pattern signatures include
+the final stop for identity; final-stop departure metrics remain excluded.
+
+**Consequences:** Journey progression uses adjacent scheduled non-final timing
+stops before eligibility filtering, then reports paired coverage separately.
+The existing thresholds and primary population remain unchanged. This study
+uses the pinned complete September snapshot and selects examples after an
+afternoon screen by late-observation volume. It is descriptive and does not
+establish causes, future performance or network-wide ranking. See
+[journey study](journey-patterns.md) for selection, checks and limitations.

@@ -11,6 +11,10 @@ This review uses the same pinned September snapshot as the case study, not a
 new live-data refresh. The [executed feasibility notebook](../notebooks/detail-analysis-feasibility.ipynb)
 records the queries and checks.
 
+The first [journey and recurring-departure study](journey-patterns.md) now follows
+route 840's 16:15 departure and Växjö route 1's Stortorget–Dalbo section through
+complete September data, with reproducible queries and explicit paired coverage.
+
 ## Recommended order
 
 | Investigation | What it would answer | How to do it with the existing data |
