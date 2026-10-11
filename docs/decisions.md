@@ -874,3 +874,26 @@ existing categories and town labels, while regional lines have their own
 analysis. The original mixed-category screen is documented as such; the selected
 examples are retained as separate regional and city cases, without a cross-category
 performance comparison. No route classifications or metric definitions changed.
+
+---
+
+## D-026 · 2026-10-11 · Focus route 1 progression on a fixed city-bus pattern
+
+**Decision:** Follow the previously identified direction-0 Löparvägen–Kurortsvägen
+pattern on September weekdays, retaining its full stop/timing/running-time
+signature. Compare recurring start times within this pattern; keep regional buses,
+other route 1 variants and the opposite direction separate.
+
+**Reason:** The user approved the focused city-bus study as the first step.
+Holding the pattern fixed avoids mixing endpoints or running-time schedules.
+Linking Teleborg–Stortorget recovery with Stortorget–Dalbo gain by service date
+and trip tests progression within individual journeys, not just separate medians.
+
+**Consequences:** Pair and stop summaries retain the existing 20-trip/90% floors.
+Four recurring groups fail the paired trip floor, including 16:53 despite 100%
+paired coverage, and their summaries are withheld from displayed results.
+Percentile whiskers describe observed spread, not confidence intervals. Daily and
+leave-one-date-out checks are descriptive robustness checks, not significance tests.
+Dalbo is the last non-final timing stop, so no claim of recovery after it is made.
+The [study](city-route1-study.md) and [executed notebook](../notebooks/city-route1-journeys.ipynb)
+record the evidence and limitations. No fixed definitions or source-system settings changed.

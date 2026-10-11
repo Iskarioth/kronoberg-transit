@@ -14,6 +14,7 @@ dashboard, with the full pipeline, decisions and definitions open for review.
 - [September 2026 portfolio case study](docs/case-study.md)
 - [Next analytical questions and feasibility checks](docs/analysis-opportunities.md)
 - [Delay along journeys and recurring departures](docs/journey-patterns.md)
+- [Focused Växjö route 1 weekday study](docs/city-route1-study.md)
 - Portfolio presentation: [English](docs/portfolio-en.md) · [Svenska](docs/portfolio-sv.md)
 
 The report contains Overview, When, Routes, Stations, Data quality and About.

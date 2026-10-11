@@ -75,6 +75,10 @@ traffic, timetable allowances, passenger volumes or vehicle carryover as its cau
 
 ## Växjö city buses — route 1 from Stortorget to Dalbo Centrum
 
+The [focused route 1 study](city-route1-study.md) now compares recurring scheduled
+departures across weekdays, links recovery and renewed delay within journeys,
+and records the boundary on measuring recovery after Dalbo.
+
 For one fixed direction-0 stop and running-time pattern, weekday journeys
 starting between 15:00 and 17:59 supplied 362 observed adjacent pairs out of
 363 eligible pairs (99.72% paired coverage). The median recorded delay increase
