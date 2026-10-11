@@ -1,13 +1,8 @@
 name: daily
 
 on:
-  schedule:
-    # 05:23 UTC = 07:23 Stockholm (summer) / 06:23 (winter). Off the hour because GitHub delays
-    # and sometimes drops scheduled runs at the start of the hour. Service dates are chosen in
-    # Stockholm time in pipeline.py, so the trigger's time zone does not matter.
-    # This cron trigger is a fallback: cron-job.org starts the workflow daily via
-    # workflow_dispatch, since this schedule has not fired on GitHub's side (D-023).
-    - cron: "23 5 * * *"
+  # cron-job.org dispatches daily at 06:47 Europe/Stockholm (D-023).
+  # The redundant GitHub schedule was removed after both triggers fired (D-024).
   workflow_dispatch:
     inputs:
       dates:

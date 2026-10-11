@@ -15,14 +15,15 @@ KoDa archive (raw, never stored by us)
   → DuckDB SQL: dedupe, join to same-date static schedule, compute delays
   → Parquet partitions on Hugging Face (warehouse)
   → daily aggregates to Google Sheets (serving layer)
-  → Looker Studio (public dashboard)
+  → Google Data Studio (formerly Looker Studio)
 ```
 
 `kronoberg_transit.pipeline` runs this end to end for one or more service dates: fetch,
 transform, upload that date's partitions to the Hugging Face dataset, then rebuild the
 Sheet from the full dataset (D-020). The `.github/workflows/daily.yml` workflow runs it
-once a day, started by an external scheduler through `workflow_dispatch` (D-023), with
-its own cron trigger kept as a fallback, picking up the dates missing from the dataset.
+once a day, started by an external scheduler through `workflow_dispatch` (D-023).
+The redundant GitHub cron trigger was removed in D-024; manual dispatch remains
+available for recovery. The pipeline picks up dates missing from the dataset.
 Stop events in the daylight-saving window are marked `dst_ambiguous` rather than
 blocking the date (D-021).
 

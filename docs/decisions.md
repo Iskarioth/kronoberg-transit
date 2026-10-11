@@ -807,3 +807,38 @@ automated pipeline depends on.
   remove the cron line if it becomes noise.
 - The token must be rotated before 2027-03-23. An expired token makes the request return 401 and
   cron-job.org notifies Marcus.
+
+---
+
+## D-024 · 2026-10-11 · Keep external dispatch; remove redundant GitHub schedule
+
+**Decision:** Retain the existing cron-job.org dispatch at 06:47 Europe/Stockholm
+and remove the `schedule` trigger from `.github/workflows/daily.yml`.
+`workflow_dispatch`, its recovery/backfill inputs, concurrency and pipeline steps
+are unchanged. Marcus approved proceeding with this recommendation.
+
+**Reason:** A live check of the seven latest daily workflow runs found all seven
+successful, with both `workflow_dispatch` and `schedule` runs on October 8, 9 and
+10. The original D-023 observation that GitHub's schedule never fired no longer
+describes the current state. The scheduled runs started around 11:13–12:05 UTC,
+several hours after the 04:47 UTC dispatches. Keeping both creates redundant
+Sheet rebuilds and aggregate run-log rows without adding service dates.
+
+Evidence: [October 10 dispatch](https://github.com/Iskarioth/kronoberg-transit/actions/runs/38025270094)
+and [October 10 scheduled run](https://github.com/Iskarioth/kronoberg-transit/actions/runs/38047675491).
+The [October 11 dispatch](https://github.com/Iskarioth/kronoberg-transit/actions/runs/38112682267)
+also completed successfully. This is a bounded recent-run check, not a claim
+about all historical runs.
+
+**Consequences:**
+
+- There is one automatic trigger. A failure of the external scheduler can delay
+  freshness; manual dispatch remains available, and date selection catches up
+  missing dates as described in D-023.
+- No scheduler account settings, credentials, metric definitions, exclusions or
+  pipeline transformation logic changed.
+- The token-rotation requirement and dispatch-versus-run monitoring caveat in
+  D-023 remain in force.
+- Verification: all 158 existing tests passed using a project-local temporary
+  directory; lint and formatting checks passed. September's pinned dataset
+  separately passed all 229 aggregation consistency checks.
