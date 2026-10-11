@@ -28,11 +28,10 @@ och About. Där går det att undersöka mönster, se antalet observationer och
 datatäckningen samt läsa hur måtten är definierade. På hållplatskartan visar
 bubblornas storlek antalet observerade avgångar och färgen punktligheten.
 
-![Översiktsdiagram med punktlighet för vardagar och helger samt daglig punktlighet och antal avgångar](images/portfolio-overview.png)
+![Översikt med septembers punktlighet, datatäckning, antal observationer och alternativa förseningsgränser](images/portfolio-overview.jpg)
 
-*Skärmbild från dashboarden. Det dagliga diagrammet visar även början av
-oktober. Siffrorna i den här projektbeskrivningen avser bara septembers
-30 kompletta trafikdagar.*
+*Den uppdaterade översikten, fångad den 11 oktober 2026. September är vald
+månad. Uppdateringsinformationen visar hur färska de bakomliggande uppgifterna är.*
 
 ## Vad september visade
 
@@ -59,6 +58,12 @@ Hållplatsvyn ger ett annat sätt att utforska materialet. Stortorget hade
 till exempel **21 598 observerade avgångar**, **99,82 % datatäckning** och
 **84,05 % punktlighet**. Totalt uppfyllde 256 hållplatsgrupper kraven för
 septembervyn med fasta tidtabellstider.
+
+![Hållplatskarta där bubblornas storlek visar observerade avgångar och färgen visar punktlighet](images/portfolio-stations.jpg)
+
+*Septembers hållplatser med fast tid i tidtabellen som uppfyller
+rapporteringskraven, över alla dagar. Större bubblor betyder fler observerade
+avgångar, och färgskalan visar punktligheten.*
 
 ## Det svåraste var att avgöra vad som räknades som en observation
 

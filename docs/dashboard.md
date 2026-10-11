@@ -130,3 +130,30 @@ schedule had not fired. It does not establish that every historical run succeede
 Avoid adding more dashboard pages until these maintenance and presentation steps
 have a concrete purpose. The current dashboard already supports the original
 network, time, route, station and data-quality questions.
+
+## Presentation update — 11 October 2026
+
+The report now uses Lato typography and a subtle grey canvas. Overview's
+scorecards have consistent widths and aligned rows; its freshness table is
+compact, and its charts have descriptive titles. The hourly and route charts
+also have titles. Stations, Data quality and About have clearer page headings,
+and About uses a narrower reading column with larger body text.
+
+The station map is taller and opens at a saved view focused on the service
+area. Its bubble-size and punctuality-colour definitions are unchanged.
+Street View was removed from its controls and a distance scale was enabled.
+The Data quality table was narrowed to fit within the report canvas.
+
+Updated [Overview](images/portfolio-overview.jpg) and
+[station map](images/portfolio-stations.jpg) captures are used in both
+portfolio versions. They show the actual report; only the surrounding browser
+interface was cropped away. The earlier Overview plot capture remains in
+`images/portfolio-overview.png` as a record of the previous presentation.
+
+All six pages were reviewed. Saved headings, cards, text and map rendering
+were checked, with September's 127,059 observed departures and 78.23%
+punctuality retained. The station table still contains 256 reportable groups.
+Codex's chart-rendering limitation remains: newly styled plot marks cannot be
+independently rechecked or captured here. A fresh visual review of those plots
+in the owner's working browser remains necessary for final presentation
+acceptance. Definitions, source data and Restricted sharing were preserved.

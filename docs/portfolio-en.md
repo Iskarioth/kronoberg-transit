@@ -27,10 +27,10 @@ and About. A reader can explore the patterns, see the sample sizes and
 coverage, and check how the measures are defined. The station map uses bubble
 size for observed departures and colour for punctuality.
 
-![Overview charts showing weekday and weekend punctuality, with a daily punctuality line and departure counts](images/portfolio-overview.png)
+![Network overview showing September punctuality, coverage, sample sizes and alternative delay thresholds](images/portfolio-overview.jpg)
 
-*Dashboard screenshot. The daily chart includes early October; the figures in
-this case study use September's 30 complete service dates only.*
+*The updated Overview, captured on 11 October 2026. The selected month is
+September; the freshness badges describe the underlying data's latest update.*
 
 ## What September showed
 
@@ -56,6 +56,11 @@ The station view adds another way to explore the data. Stortorget, for example,
 had **21,598 observed departures**, **99.82% coverage** and **84.05% punctuality**.
 Overall, 256 station groups met the reporting requirements for the September
 timing-stop view.
+
+![Station map showing observed departures through bubble size and punctuality through colour](images/portfolio-stations.jpg)
+
+*September's reportable timing-stop stations, across all days. The larger
+bubbles show more observed departures; the colour scale shows punctuality.*
 
 ## The hardest part was deciding what counted as an observation
 
